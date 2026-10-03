@@ -15,6 +15,19 @@ Open http://127.0.0.1:8765 and choose **Demo chiller** to see the HMI without ha
 
 The server listens on this computer only. Site profiles stay in `data/` and are not committed.
 
+## Install at home
+
+Build both packages from this repository:
+
+```bash
+packaging/build-all.sh
+```
+
+- Windows: `dist/ChillerMonitor-0.1.0-Setup.exe`. It installs for the current user, Python included, and adds a desktop shortcut. Windows may warn that the publisher is unknown; choose More info, then Run anyway. Site profiles are kept in `%LOCALAPPDATA%\ChillerMonitor`.
+- Linux, 64-bit, Python 3.11–3.14: `dist/chiller-monitor-0.1.0-linux-x86_64.tar.gz`. Extract it and run `./install.sh`. No administrator account is required, and the Python packages are already in the archive. Site profiles are kept in `~/.local/share/chiller-monitor`.
+
+Close the program window to stop it. Choose **Demo chiller** on the page to try the HMI without a controller.
+
 ## Connection
 
 1. Put the chiller on the RUT. A controller with RS485 uses a serial model (for example a RUT956) and RutOS **Services → Modbus** as a Modbus TCP gateway. A controller that already speaks Modbus TCP only needs to be on the RUT LAN.
