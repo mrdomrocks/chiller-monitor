@@ -1,0 +1,7 @@
+-r requirements-runtime.txt
+pythonnet==3.2.0
+clr-loader==0.3.1
+cffi>=1.17
+pycparser
+bottle
+typing_extensions

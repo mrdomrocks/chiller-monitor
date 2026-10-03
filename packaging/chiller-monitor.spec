@@ -1,6 +1,6 @@
 Name:           chiller-monitor
 Version:        0.1.0
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        Local HMI for a chiller polled over Modbus TCP
 License:        LicenseRef-Proprietary
 URL:            https://github.com/mrdomrocks/chiller-monitor
@@ -21,9 +21,9 @@ Requires:       webkit2gtk4.1
 %define __os_install_post %{nil}
 
 %description
-Local plant page for a water chiller reached over Modbus TCP.
-The program listens on 127.0.0.1:8765 and stores site profiles
-in each user's ~/.local/share/chiller-monitor directory.
+Desktop program for a water chiller reached over Modbus TCP.
+It opens in its own window. Site profiles are stored in each
+user's ~/.local/share/chiller-monitor directory.
 
 %prep
 :
@@ -42,8 +42,11 @@ rm -rf %{buildroot}/opt/chiller-monitor/lib/bin
 find %{buildroot}/opt/chiller-monitor/lib -type d -name __pycache__ -print0 | xargs -0 -r rm -rf
 install -d %{buildroot}%{_bindir}
 install -m 0755 %{_repodir}/packaging/rpm/chiller-monitor.sh %{buildroot}%{_bindir}/chiller-monitor
+install -m 0644 %{_repodir}/packaging/icons/chiller-monitor.png %{buildroot}/opt/chiller-monitor/chiller-monitor.png
 install -d %{buildroot}%{_datadir}/applications
 install -m 0644 %{_repodir}/packaging/rpm/chiller-monitor.desktop %{buildroot}%{_datadir}/applications/chiller-monitor.desktop
+install -d %{buildroot}%{_datadir}/icons/hicolor/256x256/apps
+install -m 0644 %{_repodir}/packaging/icons/chiller-monitor.png %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/chiller-monitor.png
 install -d %{buildroot}%{_docdir}/chiller-monitor
 install -m 0644 %{_repodir}/packaging/rpm/README.txt %{buildroot}%{_docdir}/chiller-monitor/README
 
@@ -51,6 +54,7 @@ install -m 0644 %{_repodir}/packaging/rpm/README.txt %{buildroot}%{_docdir}/chil
 /opt/chiller-monitor
 %{_bindir}/chiller-monitor
 %{_datadir}/applications/chiller-monitor.desktop
+%{_datadir}/icons/hicolor/256x256/apps/chiller-monitor.png
 %{_docdir}/chiller-monitor
 
 %post
@@ -60,6 +64,8 @@ update-desktop-database %{_datadir}/applications >/dev/null 2>&1 || :
 update-desktop-database %{_datadir}/applications >/dev/null 2>&1 || :
 
 %changelog
+* Sat Oct 03 2026 Chiller Monitor <local@localhost> - 0.1.0-4
+- Install as a desktop program with its own window and icon.
 * Sat Oct 03 2026 Chiller Monitor <local@localhost> - 0.1.0-3
 - Customise the plant display from inside the application.
 * Sat Oct 03 2026 Chiller Monitor <local@localhost> - 0.1.0-2

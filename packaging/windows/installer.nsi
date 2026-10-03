@@ -38,7 +38,7 @@ VIAddVersionKey "CompanyName" "Chiller Monitor"
 VIAddVersionKey "LegalCopyright" "Copyright 2026"
 
 Function LaunchApp
-  ExecShell "open" "$INSTDIR\Chiller Monitor.bat"
+  ExecShell "open" "$INSTDIR\python\pythonw.exe" '"$INSTDIR\chiller-monitor.pyw"'
 FunctionEnd
 
 Section "Install"
@@ -48,13 +48,15 @@ Section "Install"
   File /r "staging\static"
   File /r "staging\python"
   File "staging\Chiller Monitor.bat"
+  File "staging\chiller-monitor.pyw"
+  File "staging\chiller-monitor.ico"
   File "staging\README.txt"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   CreateDirectory "$SMPROGRAMS\Chiller Monitor"
-  CreateShortcut "$SMPROGRAMS\Chiller Monitor\Chiller Monitor.lnk" "$INSTDIR\Chiller Monitor.bat"
+  CreateShortcut "$SMPROGRAMS\Chiller Monitor\Chiller Monitor.lnk" "$INSTDIR\python\pythonw.exe" '"$INSTDIR\chiller-monitor.pyw"' "$INSTDIR\chiller-monitor.ico" 0 "" "" "Chiller Monitor"
   CreateShortcut "$SMPROGRAMS\Chiller Monitor\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
-  CreateShortcut "$DESKTOP\Chiller Monitor.lnk" "$INSTDIR\Chiller Monitor.bat"
+  CreateShortcut "$DESKTOP\Chiller Monitor.lnk" "$INSTDIR\python\pythonw.exe" '"$INSTDIR\chiller-monitor.pyw"' "$INSTDIR\chiller-monitor.ico" 0 "" "" "Chiller Monitor"
 
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   WriteRegStr HKCU "${UNINSTKEY}" "DisplayName" "${APPNAME}"

@@ -25,6 +25,7 @@ if [ ! -x "$DEST/.venv/bin/python" ]; then
 fi
 
 "$DEST/.venv/bin/python" -m pip install --no-index --find-links "$ROOT/wheels" -r "$DEST/requirements-runtime.txt"
+SITE=$("$DEST/.venv/bin/python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
 
 cat > "$DEST/chiller-monitor" << EOF
 #!/bin/sh
@@ -32,6 +33,10 @@ cd "$DEST"
 export CHILLER_INSTALLED=1
 export CHILLER_WINDOW=1
 export PYTHONUTF8=1
+export PYTHONPATH="$SITE\${PYTHONPATH:+:\$PYTHONPATH}"
+if "$PY" -c 'import gi' >/dev/null 2>&1; then
+  exec "$PY" -m app
+fi
 exec "$DEST/.venv/bin/python" -m app
 EOF
 chmod +x "$DEST/chiller-monitor"

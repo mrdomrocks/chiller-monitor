@@ -23,6 +23,13 @@ def test_linux_install_uses_xdg_data(monkeypatch, tmp_path):
     assert paths.data_dir() == tmp_path / "chiller-monitor"
 
 
+def test_window_icon_is_packaged():
+    from app.window import icon_file
+
+    assert icon_file(".png")
+    assert icon_file(".ico")
+
+
 def test_windows_install_uses_local_app_data(monkeypatch, tmp_path):
     monkeypatch.delenv("CHILLER_DATA", raising=False)
     monkeypatch.setenv("CHILLER_INSTALLED", "1")

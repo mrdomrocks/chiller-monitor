@@ -53,11 +53,29 @@ py_short=$(echo "$PY_VER" | awk -F. '{printf "%d.%d", $1, $2}')
   --abi "$abi" \
   --only-binary=:all: \
   --upgrade \
-  -r "$ROOT/packaging/requirements-runtime.txt"
+  -r "$ROOT/packaging/requirements-windows.txt"
+# pywebview is a wheel. Its proxy-tools dependency is published only as source.
+.venv/bin/python -m pip install \
+  --target "$STAGE/python/Lib/site-packages" \
+  --platform win_amd64 \
+  --python-version "$py_short" \
+  --implementation cp \
+  --abi "$abi" \
+  --only-binary=:all: \
+  --no-deps \
+  --upgrade \
+  pywebview==6.2.1
+.venv/bin/python -m pip install \
+  --target "$STAGE/python/Lib/site-packages" \
+  --no-deps \
+  --upgrade \
+  proxy-tools
 
 rm -rf "$STAGE/app" "$STAGE/static"
 rsync -a --exclude '__pycache__' "$ROOT/app" "$ROOT/static" "$STAGE/"
 cp "$ROOT/packaging/windows/Chiller Monitor.bat" "$STAGE/Chiller Monitor.bat"
+cp "$ROOT/packaging/windows/chiller-monitor.pyw" "$STAGE/chiller-monitor.pyw"
+cp "$ROOT/packaging/icons/chiller-monitor.ico" "$STAGE/chiller-monitor.ico"
 cp "$ROOT/packaging/windows/README.txt" "$STAGE/README.txt"
 
 if [[ ! -x "$NSIS/makensis.exe" ]]; then

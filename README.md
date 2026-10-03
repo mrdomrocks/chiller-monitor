@@ -23,8 +23,8 @@ Build both packages from this repository:
 packaging/build-all.sh
 ```
 
-- Windows: `dist/ChillerMonitor-0.1.0-Setup.exe`. It installs for the current user, Python included, adds Start menu and desktop shortcuts, and appears in Installed apps. Windows may warn that the publisher is unknown; choose More info, then Run anyway. Site profiles are kept in `%LOCALAPPDATA%\ChillerMonitor`.
-- Linux, 64-bit Fedora or Nobara with Python 3.14: `dist/chiller-monitor-0.1.0-3.fc44.x86_64.rpm`. Install it with `sudo dnf install ./dist/chiller-monitor-0.1.0-3.fc44.x86_64.rpm`. It opens in its own window. Site profiles are kept in `~/.local/share/chiller-monitor`.
+- Windows: `dist/ChillerMonitor-0.1.0-Setup.exe`. It installs for the current user, Python included, adds Start menu and desktop shortcuts, and appears in Installed apps. The shortcuts open Chiller Monitor in its own window. Windows may warn that the publisher is unknown; choose More info, then Run anyway. The window uses the Edge WebView2 Runtime included with Windows 11 and current Windows 10. Site profiles are kept in `%LOCALAPPDATA%\ChillerMonitor`.
+- Linux, 64-bit Fedora or Nobara with Python 3.14: `dist/chiller-monitor-0.1.0-4.fc44.x86_64.rpm`. Install it with `sudo dnf install ./dist/chiller-monitor-0.1.0-4.fc44.x86_64.rpm`. The application menu opens it in its own window. Site profiles are kept in `~/.local/share/chiller-monitor`.
 
 Close the program window to stop it. Choose **Demo chiller** to try the HMI without a controller. **Customise display** changes the plant page for that site.
 
