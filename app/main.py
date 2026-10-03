@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
 from contextlib import asynccontextmanager
@@ -13,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.decode import engineering_from_raw, format_value
+from app.mapper import mapper
 from app.monitor import Monitor, probe_site
 from app.paths import ROOT
 from app.store import (
@@ -45,6 +47,7 @@ monitor = Monitor()
 async def lifespan(_app: FastAPI):
     yield
     await monitor.shutdown()
+    await mapper.shutdown()
 
 
 app = FastAPI(title="RUT Chiller Monitor", version=__version__, lifespan=lifespan)
@@ -302,6 +305,112 @@ async def demo_start():
 @app.post("/api/demo/stop")
 async def demo_stop():
     return await monitor.stop_demo()
+
+
+@app.get("/api/mapper")
+def mapper_state():
+    return mapper.snapshot()
+
+
+@app.put("/api/mapper/settings")
+def mapper_settings(body: dict):
+    try:
+        return mapper.update_settings(body)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/mapper/capture/start")
+def mapper_capture_start(body: dict):
+    try:
+        return mapper.start_capture(body)
+    except (ValueError, RuntimeError, OSError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/mapper/capture/stop")
+def mapper_capture_stop():
+    return mapper.stop_capture()
+
+
+@app.post("/api/mapper/clear")
+def mapper_clear():
+    return mapper.clear()
+
+
+@app.put("/api/mapper/points/{point_id}")
+def mapper_point(point_id: str, body: dict):
+    try:
+        return mapper.update_point(point_id, body)
+    except KeyError as exc:
+        raise HTTPException(404, "Point not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/mapper/record")
+def mapper_record(body: dict):
+    return mapper.set_recording(bool(body.get("enabled")))
+
+
+@app.post("/api/mapper/recordings")
+def mapper_save(body: dict):
+    try:
+        return mapper.save_recording(str(body.get("name") or ""))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/mapper/recordings/import")
+def mapper_import(body: dict, replace: bool | None = None):
+    try:
+        return mapper.import_recording(body, replace=replace)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/mapper/recordings/{recording_id}")
+def mapper_delete_recording(recording_id: str):
+    try:
+        return mapper.delete_recording(recording_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/mapper/replay")
+async def mapper_replay(body: dict):
+    try:
+        return await mapper.start_replay(body.get("recording_id") or None, int(body.get("port") or 1502))
+    except (ValueError, RuntimeError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/mapper/replay/stop")
+async def mapper_replay_stop():
+    return await mapper.stop_replay()
+
+
+@app.post("/api/mapper/plant")
+async def mapper_plant(body: dict):
+    recording_id = body.get("recording_id") or None
+    try:
+        await mapper.start_replay(recording_id, int(body.get("port") or 1502))
+        replace = body.get("replace")
+        site = await asyncio.to_thread(
+            mapper.publish_site,
+            int(body.get("unit") or 1),
+            str(body.get("name") or "Mapper replay"),
+            recording_id,
+            None if replace is None else bool(replace),
+            body.get("site_id") or None,
+        )
+        state = mapper.snapshot()
+        if monitor.snapshot().get("simulator_running"):
+            await monitor.stop_demo()
+        live = await monitor.connect(site["id"])
+    except (ValueError, RuntimeError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"mapper": state, "site": site, "live": live}
 
 
 @app.get("/api/live")

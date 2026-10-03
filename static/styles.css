@@ -122,6 +122,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   outline-offset: 2px;
 }
 
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.steps span {
+  background: var(--wash);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.steps b {
+  display: block;
+  color: var(--brand);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.frame-log { max-height: 220px; overflow: auto; margin-top: 12px; }
+.mapper-table input, .mapper-table select { min-width: 0; width: 100%; }
+
 .update-banner {
   display: flex;
   flex-wrap: wrap;

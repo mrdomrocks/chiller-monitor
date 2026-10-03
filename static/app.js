@@ -140,6 +140,7 @@ function ensureShell() {
       <button type="button" data-view="plant" aria-selected="true">Plant</button>
       <button type="button" data-view="map" aria-selected="false">Register map</button>
       <button type="button" data-view="link" aria-selected="false">Connection</button>
+      <button type="button" data-view="mapper" aria-selected="false">Mapper</button>
     </nav>
     <main id="main"></main>
     <div id="modal" class="modal" hidden>
@@ -223,7 +224,8 @@ function render() {
   paintHeader();
   document.body.classList.toggle("customising", Boolean(S.customise && S.view === "plant" && S.site));
   const main = document.getElementById("main");
-  if (!S.site) {
+  if (S.view === "mapper") renderMapper(main);
+  else if (!S.site) {
     main.innerHTML = `
       <section class="welcome">
         <h1>Watch a chiller through the RUT</h1>
@@ -233,9 +235,7 @@ function render() {
           <button type="button" data-action="add-site">Create a site</button>
         </div>
       </section>`;
-    return;
-  }
-  if (S.view === "map") renderMap(main);
+  } else if (S.view === "map") renderMap(main);
   else if (S.view === "link") renderLink(main);
   else renderPlant(main);
   if (drawOpen) {
@@ -243,6 +243,7 @@ function render() {
     if (details) details.open = true;
   }
   paintLive();
+  syncMapperWatch();
 }
 
 function layoutOn(key) {
@@ -1101,6 +1102,10 @@ async function onClick(event) {
     return;
   }
   const action = button.dataset.action;
+  if (action && action.startsWith("mapper-")) {
+    await onMapperAction(action);
+    return;
+  }
   if (action === "close-modal") {
     document.getElementById("modal").hidden = true;
     return;
@@ -1325,6 +1330,38 @@ async function onSubmit(event) {
 
 async function onChange(event) {
   const target = event.target;
+  if (target.id === "mapperMapping" || target.id === "mapperReplace") {
+    await guard(async () => {
+      S.mapper = await api("/api/mapper/settings", {
+        method: "PUT",
+        body: {
+          ...mapperSettingsBody(),
+          mapping: document.getElementById("mapperMapping").checked,
+          replace: document.getElementById("mapperReplace").checked,
+        },
+      });
+      render();
+    });
+    return;
+  }
+  if (target.dataset.mapperField) {
+    await saveMapperPoint(target.closest("tr"));
+    return;
+  }
+  if (target.id === "mapperFile" && target.files?.[0]) {
+    await guard(async () => {
+      const text = await target.files[0].text();
+      const replace = document.getElementById("mapperReplace").checked;
+      S.mapper = await api(`/api/mapper/recordings/import?replace=${replace ? "true" : "false"}`, {
+        method: "POST",
+        body: JSON.parse(text),
+      });
+      render();
+      toast(replace ? "Recording replaced the current map" : "Recording saved. The current map was kept", true);
+    });
+    target.value = "";
+    return;
+  }
   if (target.id === "siteSelect") {
     S.siteId = target.value || null;
     S.pointId = null;
@@ -1432,6 +1469,296 @@ async function keepFresh() {
     }
   }
   paintLive();
+}
+
+const MAPPER_TYPES = ["bool", "uint16", "int16", "uint32", "int32", "float32", "float64", "string"];
+const MAPPER_ORDERS = ["ABCD", "CDAB", "BADC", "DCBA"];
+let mapperTimer = 0;
+
+function mapperOptions(values, current) {
+  return values.map((item) => `<option${item === current ? " selected" : ""}>${esc(item)}</option>`).join("");
+}
+
+function renderMapper(main) {
+  const state = S.mapper || {
+    settings: { mode: "rtu", port: "", baud: 9600, parity: "N", stopbits: 1, bytesize: 8 },
+    ports: [],
+    baud_rates: [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200],
+    frames: [],
+    points: [],
+    recordings: [],
+    units: [],
+    detail: "Loading the mapper.",
+  };
+  const settings = state.settings || {};
+  const ports = state.ports || [];
+  const portOptions = [`<option value="">Choose a port</option>`]
+    .concat(ports.map((port) => `<option value="${esc(port.device)}"${port.device === settings.port ? " selected" : ""}>${esc(port.device)} — ${esc(port.description)}</option>`))
+    .join("");
+  const chosenPort = settings.port && !ports.some((port) => port.device === settings.port)
+    ? `<option value="${esc(settings.port)}" selected>${esc(settings.port)}</option>`
+    : "";
+  const baudOptions = (state.baud_rates || [9600]).map((baud) => `<option value="${baud}"${Number(baud) === Number(settings.baud) ? " selected" : ""}>${baud}</option>`).join("");
+  const recordings = state.recordings || [];
+  const recordingOptions = [`<option value="">Current capture</option>`]
+    .concat(recordings.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} (${item.exchanges})</option>`))
+    .join("");
+  const units = state.units || [];
+  const unitOptions = (units.length ? units : [1]).map((unit) => `<option value="${unit}">Unit ${unit}</option>`).join("");
+  const rows = (state.points || []).map((point) => `
+    <tr data-point="${esc(point.id)}">
+      <td>${esc(point.device)}</td>
+      <td>${esc(point.function)}</td>
+      <td class="num">${esc(point.address_number)}</td>
+      <td><input data-mapper-field="name" value="${esc(point.name)}" maxlength="80"></td>
+      <td><select data-mapper-field="addressing">
+        <option value="protocol"${point.addressing === "protocol" ? " selected" : ""}>Protocol</option>
+        <option value="modicon"${point.addressing === "modicon" ? " selected" : ""}>Modicon</option>
+      </select></td>
+      <td><select data-mapper-field="dtype">${mapperOptions(MAPPER_TYPES, point.dtype)}</select></td>
+      <td><select data-mapper-field="byte_order">${mapperOptions(MAPPER_ORDERS, point.byte_order)}</select></td>
+      <td><input data-mapper-field="scale" type="number" step="any" value="${esc(point.scale)}"></td>
+      <td><input data-mapper-field="offset" type="number" step="any" value="${esc(point.offset)}"></td>
+      <td><input data-mapper-field="decimals" type="number" min="0" max="4" value="${esc(point.decimals)}"></td>
+      <td><input data-mapper-field="unit" value="${esc(point.unit || "")}" maxlength="16" placeholder="°C" aria-label="Engineering unit"></td>
+      <td class="num" data-mapper-value="${esc(point.id)}">${esc(point.display || "—")}</td>
+    </tr>`).join("");
+  main.innerHTML = `
+    <section class="panel" id="mapperRoot">
+      <div class="steps">
+        <span><b>1 Capture</b> Listen on RS-485</span>
+        <span><b>2 Map</b> Name the registers</span>
+        <span><b>3 Record</b> Keep the exchanges</span>
+        <span><b>4 Replay</b> Serve them to the HMI</span>
+      </div>
+      <p class="help" id="mapperDetail">${esc(state.detail || "")}</p>
+      <h2>Capture</h2>
+      <p class="help">Monitor mode observes Modbus RTU or ASCII already on the wire. It does not transmit requests onto the RS-485 network.</p>
+      <div class="form-grid">
+        <label>Mode
+          <select id="mapperMode">
+            <option value="rtu"${settings.mode !== "ascii" ? " selected" : ""}>Modbus RTU</option>
+            <option value="ascii"${settings.mode === "ascii" ? " selected" : ""}>Modbus ASCII</option>
+          </select>
+        </label>
+        <label>Serial port
+          <select id="mapperPort">${portOptions}${chosenPort}</select>
+        </label>
+        <label>Baud <select id="mapperBaud">${baudOptions}</select></label>
+        <label>Parity
+          <select id="mapperParity">
+            <option${settings.parity === "N" ? " selected" : ""}>N</option>
+            <option${settings.parity === "E" ? " selected" : ""}>E</option>
+            <option${settings.parity === "O" ? " selected" : ""}>O</option>
+          </select>
+        </label>
+        <label>Data bits
+          <select id="mapperBits">
+            <option value="8"${Number(settings.bytesize) !== 7 ? " selected" : ""}>8</option>
+            <option value="7"${Number(settings.bytesize) === 7 ? " selected" : ""}>7</option>
+          </select>
+        </label>
+        <label>Stop bits
+          <select id="mapperStop">
+            <option value="1"${Number(settings.stopbits) !== 2 ? " selected" : ""}>1</option>
+            <option value="2"${Number(settings.stopbits) === 2 ? " selected" : ""}>2</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="primary" type="button" data-action="mapper-start"${state.capturing ? " disabled" : ""}>Start monitor</button>
+        <button type="button" data-action="mapper-stop"${state.capturing ? "" : " disabled"}>Stop monitor</button>
+        <button type="button" data-action="mapper-clear">Clear</button>
+      </div>
+      <div class="table-wrap frame-log"><table>
+        <thead><tr><th>Role</th><th>Unit</th><th>Function</th><th>Frame</th></tr></thead>
+        <tbody id="mapperFrames">${mapperFrameRows(state.frames)}</tbody>
+      </table></div>
+    </section>
+    <section class="panel">
+      <h2>Map</h2>
+      <p class="help">Mapping stays off until you turn it on. The frame log still runs either way. With Mapping on, each register in a response is added to the map and its value updates.</p>
+      <label class="inline"><input type="checkbox" id="mapperMapping"${state.mapping ? " checked" : ""}> Mapping</label>
+      <div class="table-wrap"><table class="mapper-table">
+        <thead><tr><th>Unit</th><th>Area</th><th>Address</th><th>Name</th><th>Addressing</th><th>Type</th><th>Order</th><th>Scale</th><th>Offset</th><th>Decimals</th><th>Eng. unit</th><th>Value</th></tr></thead>
+        <tbody id="mapperPoints">${rows || `<tr><td colspan="12" class="muted">No registers yet. Start the monitor on a live RS-485 network, or load a recording.</td></tr>`}</tbody>
+      </table></div>
+    </section>
+    <section class="panel">
+      <div class="split">
+        <div>
+          <h2>Record</h2>
+          <p class="help">Keep the request and response exchanges from the working equipment.</p>
+          <div class="form-actions">
+            <button type="button" data-action="mapper-record-on"${state.recording ? " disabled" : ""}>Start record</button>
+            <button type="button" data-action="mapper-save">Save recording</button>
+          </div>
+          <label>Name <input id="mapperRecordName" maxlength="80" placeholder="Plant room"></label>
+          <p class="muted" id="mapperExchangeCount">${esc(state.exchange_count || 0)} exchanges in this session.</p>
+          <label class="inline">Load recording <input id="mapperFile" type="file" accept="application/json,.json"></label>
+        </div>
+        <div>
+          <h2>Replay</h2>
+          <p class="help">The emulator answers matching requests with the captured device responses, on this computer only. Replace stays off until you turn it on. Show on plant and Load recording then keep the current map. With Replace on, the captured registers take its place.</p>
+          <label class="inline"><input type="checkbox" id="mapperReplace"${state.replace ? " checked" : ""}> Replace</label>
+          <div class="form-grid">
+            <label>Recording <select id="mapperRecording">${recordingOptions}</select></label>
+            <label>Unit <select id="mapperUnit">${unitOptions}</select></label>
+            <label>TCP port <input id="mapperReplayPort" type="number" min="0" max="65535" value="1502"></label>
+            <label>Site name <input id="mapperSiteName" maxlength="80" value="Mapper replay"></label>
+          </div>
+          <div class="form-actions">
+            <button type="button" data-action="mapper-replay">${state.replaying ? "Restart replay" : "Start replay"}</button>
+            <button type="button" data-action="mapper-replay-stop"${state.replaying ? "" : " disabled"}>Stop replay</button>
+            <button class="primary" type="button" data-action="mapper-plant">Show on plant</button>
+          </div>
+          <p class="muted" id="mapperReplay">${state.replaying ? `Emulator 127.0.0.1:${esc(state.replay_port)}` : "Replay is stopped."}</p>
+        </div>
+      </div>
+    </section>`;
+}
+
+function mapperFrameRows(frames) {
+  const rows = (frames || []).slice(-12).reverse().map((frame) => `
+    <tr>
+      <td>${esc(frame.role)}</td>
+      <td>${esc(frame.unit)}</td>
+      <td>${frame.exception ? "exception" : esc(frame.function)}</td>
+      <td class="raw">${esc(frame.raw)}</td>
+    </tr>`).join("");
+  return rows || `<tr><td colspan="4" class="muted">Waiting for frames.</td></tr>`;
+}
+
+function mapperSettingsBody() {
+  return {
+    mode: document.getElementById("mapperMode").value,
+    port: document.getElementById("mapperPort").value,
+    baud: Number(document.getElementById("mapperBaud").value),
+    parity: document.getElementById("mapperParity").value,
+    bytesize: Number(document.getElementById("mapperBits").value),
+    stopbits: Number(document.getElementById("mapperStop").value),
+  };
+}
+
+function syncMapperWatch() {
+  const want = S.view === "mapper";
+  if (want && !mapperTimer) {
+    mapperTimer = setInterval(() => { refreshMapper().catch(() => {}); }, 1000);
+    refreshMapper().catch(() => {});
+  } else if (!want && mapperTimer) {
+    clearInterval(mapperTimer);
+    mapperTimer = 0;
+  }
+}
+
+async function refreshMapper() {
+  if (S.view !== "mapper") return;
+  const next = await api("/api/mapper");
+  const previous = S.mapper;
+  S.mapper = next;
+  const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest("#mapperRoot, .mapper-table, #mapperFile");
+  const sameShape = previous
+    && previous.capturing === next.capturing
+    && previous.replaying === next.replaying
+    && previous.recording === next.recording
+    && previous.mapping === next.mapping
+    && previous.replace === next.replace
+    && (previous.points || []).map((point) => point.id).join() === (next.points || []).map((point) => point.id).join()
+    && (previous.recordings || []).length === (next.recordings || []).length;
+  if (!document.getElementById("mapperRoot") || (!typing && !sameShape)) {
+    render();
+    return;
+  }
+  paintMapperLive();
+}
+
+function paintMapperLive() {
+  const state = S.mapper;
+  if (!state) return;
+  const detail = document.getElementById("mapperDetail");
+  if (detail) detail.textContent = state.detail || "";
+  const frames = document.getElementById("mapperFrames");
+  if (frames) frames.innerHTML = mapperFrameRows(state.frames);
+  const count = document.getElementById("mapperExchangeCount");
+  if (count) count.textContent = `${state.exchange_count || 0} exchanges in this session.`;
+  const replay = document.getElementById("mapperReplay");
+  if (replay) replay.textContent = state.replaying ? `Emulator 127.0.0.1:${state.replay_port}` : "Replay is stopped.";
+  for (const point of state.points || []) {
+    const cell = document.querySelector(`[data-mapper-value="${CSS.escape(point.id)}"]`);
+    if (cell) cell.textContent = point.display || "—";
+  }
+}
+
+async function saveMapperPoint(row) {
+  if (!row) return;
+  const value = (name) => row.querySelector(`[data-mapper-field="${name}"]`).value;
+  await guard(async () => {
+    S.mapper = await api(`/api/mapper/points/${row.dataset.point}`, {
+      method: "PUT",
+      body: {
+        name: value("name"),
+        addressing: value("addressing"),
+        dtype: value("dtype"),
+        byte_order: value("byte_order"),
+        scale: Number(value("scale")),
+        offset: Number(value("offset")),
+        decimals: Number(value("decimals")),
+        unit: value("unit"),
+      },
+    });
+    paintMapperLive();
+  });
+}
+
+async function onMapperAction(action) {
+  await guard(async () => {
+    if (action === "mapper-start") {
+      S.mapper = await api("/api/mapper/capture/start", { method: "POST", body: mapperSettingsBody() });
+    } else if (action === "mapper-stop") {
+      S.mapper = await api("/api/mapper/capture/stop", { method: "POST" });
+    } else if (action === "mapper-clear") {
+      S.mapper = await api("/api/mapper/clear", { method: "POST" });
+    } else if (action === "mapper-record-on") {
+      S.mapper = await api("/api/mapper/record", { method: "POST", body: { enabled: true } });
+    } else if (action === "mapper-save") {
+      const name = document.getElementById("mapperRecordName").value;
+      S.mapper = await api("/api/mapper/recordings", { method: "POST", body: { name } });
+      toast("Recording saved", true);
+    } else if (action === "mapper-replay" || action === "mapper-replay-stop") {
+      if (action === "mapper-replay-stop") {
+        S.mapper = await api("/api/mapper/replay/stop", { method: "POST" });
+      } else {
+        S.mapper = await api("/api/mapper/replay", {
+          method: "POST",
+          body: {
+            recording_id: document.getElementById("mapperRecording").value,
+            port: Number(document.getElementById("mapperReplayPort").value),
+          },
+        });
+        toast("Replay emulator is running", true);
+      }
+    } else if (action === "mapper-plant") {
+      const replace = document.getElementById("mapperReplace").checked;
+      const result = await api("/api/mapper/plant", {
+        method: "POST",
+        body: {
+          recording_id: document.getElementById("mapperRecording").value,
+          port: Number(document.getElementById("mapperReplayPort").value),
+          unit: Number(document.getElementById("mapperUnit").value),
+          name: document.getElementById("mapperSiteName").value,
+          replace,
+          site_id: S.siteId || "",
+        },
+      });
+      S.mapper = result.mapper;
+      S.live = result.live;
+      S.view = "plant";
+      await refreshSites(result.site.id);
+      toast(replace ? "Plant is reading the replay emulator" : "Plant is reading the replay emulator. The register map was kept", true);
+      return;
+    }
+    render();
+  });
 }
 
 async function boot() {

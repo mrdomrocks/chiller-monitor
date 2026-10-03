@@ -55,6 +55,15 @@ The plant heading is the chiller name read from Modbus. A blank or missing name 
 
 The plant page reads the fitted-compressor register and shows that many circuits, each with its load percentage, up to six. A chiller that reports 2 shows two cards. A larger machine shows the extra compressors. Match **Fitted compressors**, each **Compressor N** load, and each run bit to the controller. On the demo chiller that count can be written, so both sizes can be checked.
 
+## Mapper
+
+The Mapper tab listens to an RS-485 network, builds a register map from the traffic it hears, saves the exchanges, and can play them back to the plant page.
+
+1. **Capture.** Choose the USB to RS-485 adapter, baud, parity, and Modbus RTU or ASCII. **Start monitor** only listens. It does not transmit requests onto the network.
+2. **Map.** **Mapping** stays off until you turn it on. With it on, each register in a response becomes a row. Set the name, data type, word order, scale, and whether the address is protocol (0-based) or Modicon.
+3. **Record.** **Start record**, then **Save recording**. A saved JSON file can be loaded later.
+4. **Replay.** **Show on plant** serves the captured responses on this computer and opens them on the plant page, so the HMI can be tried without the field device. **Replace** stays off until you turn it on. With it off, the open site keeps its register map and only the connection points at the emulator. With it on, the captured registers replace that map. Load recording follows the same switch.
+
 ## Tests
 
 ```bash
