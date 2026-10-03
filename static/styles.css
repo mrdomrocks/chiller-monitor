@@ -144,6 +144,28 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
 .muted, .plant-head p, .help { color: var(--muted); }
 .help { line-height: 1.45; margin: 0 0 14px; }
 
+.profile-hmi { margin: 8px 0 16px; }
+.profile-hmi h2 { margin: 0 0 4px; }
+.profile-group { margin-top: 12px; }
+.profile-group h3 { margin: 0 0 8px; }
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.profile-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+}
+.profile-card.alarm { border-color: var(--alarm); }
+.profile-card.stale { opacity: 0.72; }
+.profile-card .figure b { font-size: 2rem; }
+.profile-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.profile-detail { margin: 6px 0 0; }
+.profile-detail:empty { display: none; }
+
 .alarm-banner {
   margin-bottom: 12px;
   padding: 10px 14px;

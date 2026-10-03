@@ -48,6 +48,7 @@ def test_display_layout_is_saved_with_the_site():
 
     site = create_site("Layout")
     assert site["layout"]["table"] is True
+    assert site["layout"]["profile"] is True
     assert site["layout"]["compressors"] is True
     saved = update_hmi(site["id"], {"layout": {"table": False}})
     assert saved["layout"]["table"] is False

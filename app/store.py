@@ -28,6 +28,7 @@ _LAYOUT = (
     ("readings", True),
     ("status", True),
     ("outputs", True),
+    ("profile", True),
     ("table", True),
 )
 

@@ -1,6 +1,6 @@
 Name:           chiller-monitor
 Version:        0.1.0
-Release:        4%{?dist}
+Release:        5%{?dist}
 Summary:        Local HMI for a chiller polled over Modbus TCP
 License:        LicenseRef-Proprietary
 URL:            https://github.com/mrdomrocks/chiller-monitor
@@ -64,6 +64,8 @@ update-desktop-database %{_datadir}/applications >/dev/null 2>&1 || :
 update-desktop-database %{_datadir}/applications >/dev/null 2>&1 || :
 
 %changelog
+* Sat Oct 03 2026 Chiller Monitor <local@localhost> - 0.1.0-5
+- Use the Aqua Cooling A on a grey background as the application icon.
 * Sat Oct 03 2026 Chiller Monitor <local@localhost> - 0.1.0-4
 - Install as a desktop program with its own window and icon.
 * Sat Oct 03 2026 Chiller Monitor <local@localhost> - 0.1.0-3

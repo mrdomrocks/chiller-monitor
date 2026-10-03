@@ -23,6 +23,7 @@ const LAYOUT = [
   ["readings", "Flow and pressure"],
   ["status", "Status lamps"],
   ["outputs", "Writable outputs"],
+  ["profile", "Register map"],
   ["table", "Live values"],
 ];
 
@@ -247,11 +248,8 @@ function layoutOn(key) {
 function renderPlant(main) {
   const site = S.site;
   const customise = S.customise ? customiseBar(site) : "";
-  const mimic = layoutOn("mimic") ? `<section class="mimic" id="mimic">
-      ${loop("cold", "return_temp", site.evap_label || "Evaporator", "evap_label", "supply_temp")}
-      ${loop("hot", "condenser_in", site.cond_label || "Condenser", "cond_label", "condenser_out")}
-    </section>` : "";
-  const compressors = layoutOn("compressors") ? `<section class="compressor-bank">
+  const mimic = mimicHtml(site);
+  const compressors = compressorSectionShown() ? `<section class="compressor-bank">
       <div class="section-head">
         <div>
           <h2>Compressors</h2>
@@ -265,14 +263,9 @@ function renderPlant(main) {
       ${S.customise ? compressorSlots() : ""}
       <div class="compressors" id="compressorGrid"></div>
     </section>` : "";
-  const readings = layoutOn("readings") ? `<section class="side-reads">
-      ${readout("flow")}
-      ${readout("pressure")}
-    </section>` : "";
-  const status = layoutOn("status") ? `<h2 class="kicker" style="margin:6px 0">Status</h2>
-    <section class="lamps" id="lamps">${lampCards()}</section>` : "";
-  const outputs = layoutOn("outputs") ? `<h2 class="kicker" style="margin:6px 0">Writable outputs</h2>
-    <section class="controls" id="controls">${controlCards()}</section>` : "";
+  const readings = readingsHtml();
+  const status = statusHtml();
+  const outputs = outputsHtml();
   const table = layoutOn("table") ? `<div class="table-wrap">
       <table>
         <thead><tr><th>Point</th><th>Value</th><th>Raw</th><th>Quality</th></tr></thead>
@@ -293,13 +286,200 @@ function renderPlant(main) {
       </div>
     </div>
     ${customise}
-    <section class="hero">${["supply_temp", "return_temp", "setpoint", "capacity"].map(heroCard).join("")}</section>
+    ${heroHtml()}
     ${mimic}
     ${compressors}
     ${readings}
     ${status}
     ${outputs}
+    ${profileHtml()}
     ${table}`;
+}
+
+function heroRolesShown() {
+  const roles = ["supply_temp", "return_temp", "setpoint", "capacity"];
+  if (S.customise) return roles;
+  return roles.filter((role) => bound(role));
+}
+
+function heroHtml() {
+  const roles = heroRolesShown();
+  if (!roles.length) return "";
+  return `<section class="hero">${roles.map(heroCard).join("")}</section>`;
+}
+
+function loopShown(inletRole, outletRole) {
+  if (S.customise) return true;
+  return Boolean(bound(inletRole) || bound(outletRole));
+}
+
+function mimicHtml(site) {
+  if (!layoutOn("mimic")) return "";
+  const cold = loopShown("return_temp", "supply_temp")
+    ? loop("cold", "return_temp", site.evap_label || "Evaporator", "evap_label", "supply_temp")
+    : "";
+  const hot = loopShown("condenser_in", "condenser_out")
+    ? loop("hot", "condenser_in", site.cond_label || "Condenser", "cond_label", "condenser_out")
+    : "";
+  if (!cold && !hot) return "";
+  return `<section class="mimic" id="mimic">${cold}${hot}</section>`;
+}
+
+function readingsHtml() {
+  if (!layoutOn("readings")) return "";
+  const roles = ["flow", "pressure"].filter((role) => S.customise || bound(role));
+  if (!roles.length) return "";
+  return `<section class="side-reads">${roles.map(readout).join("")}</section>`;
+}
+
+function compressorSectionShown() {
+  if (!layoutOn("compressors")) return false;
+  if (S.customise) return true;
+  return compressorView().state !== "empty";
+}
+
+function statusHtml() {
+  if (!layoutOn("status")) return "";
+  const cards = lampCards();
+  if (!cards) {
+    if (!S.customise) return "";
+    return `<h2 class="kicker" style="margin:6px 0">Status</h2><p class="muted">No status or alarm points. Set a point’s widget to Status or Alarm.</p>`;
+  }
+  return `<h2 class="kicker" style="margin:6px 0">Status</h2><section class="lamps" id="lamps">${cards}</section>`;
+}
+
+function outputsHtml() {
+  if (!layoutOn("outputs")) return "";
+  const cards = controlCards();
+  if (!cards) {
+    if (!S.customise) return "";
+    return `<h2 class="kicker" style="margin:6px 0">Writable outputs</h2><p class="muted">No writable outputs. In the register map, mark a holding register or coil as writable and it will show up here.</p>`;
+  }
+  return `<h2 class="kicker" style="margin:6px 0">Writable outputs</h2><section class="controls" id="controls">${cards}</section>`;
+}
+
+function claimedPointIds() {
+  const ids = new Set();
+  const take = (point) => { if (point) ids.add(point.id); };
+  for (const role of heroRolesShown()) take(bound(role));
+  if (layoutOn("mimic")) {
+    if (loopShown("return_temp", "supply_temp")) {
+      take(bound("return_temp"));
+      take(bound("supply_temp"));
+    }
+    if (loopShown("condenser_in", "condenser_out")) {
+      take(bound("condenser_in"));
+      take(bound("condenser_out"));
+    }
+  }
+  if (layoutOn("readings")) {
+    for (const role of ["flow", "pressure"]) {
+      if (S.customise || bound(role)) take(bound(role));
+    }
+  }
+  if (layoutOn("status")) {
+    for (const point of visiblePoints()) {
+      if (point.widget === "status" || point.widget === "alarm") ids.add(point.id);
+    }
+  }
+  if (layoutOn("outputs")) {
+    for (const point of visiblePoints()) {
+      if (point.writable) ids.add(point.id);
+    }
+  }
+  if (compressorSectionShown() && compressorView().state !== "empty") {
+    take(bound("compressor_count"));
+    for (const index of compressorIndexes()) {
+      take(bound(`comp_${index}_load`));
+      take(bound(`comp_${index}_run`));
+    }
+  }
+  return ids;
+}
+
+function profilePoints() {
+  const claimed = claimedPointIds();
+  return S.site.points
+    .filter((point) => point.enabled && !claimed.has(point.id))
+    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+}
+
+function profileGroups(points) {
+  const groups = [];
+  const byName = new Map();
+  for (const point of points) {
+    const name = point.group || "General";
+    if (!byName.has(name)) {
+      const group = { name, points: [] };
+      byName.set(name, group);
+      groups.push(group);
+    }
+    byName.get(name).points.push(point);
+  }
+  return groups;
+}
+
+function profileWrite(point) {
+  if (point.dtype === "bool" || point.function === "coil") {
+    return `<div class="toggle" data-toggles="${esc(point.id)}">
+      <button type="button" data-requires-connection data-action="write-bool" data-point="${esc(point.id)}" data-flag="true">${esc(point.on_label)}</button>
+      <button type="button" data-requires-connection data-action="write-bool" data-point="${esc(point.id)}" data-flag="false">${esc(point.off_label)}</button>
+    </div>`;
+  }
+  return `<form data-write-point="${esc(point.id)}" class="write-row">
+    <input name="value" type="number" step="any" placeholder="${esc(point.unit)}">
+    <button class="primary" type="submit" data-requires-connection>Apply</button>
+  </form>`;
+}
+
+function profileCard(point) {
+  const id = esc(point.id);
+  if (point.widget === "status" || point.widget === "alarm") {
+    return `<article class="lamp-card profile-card" data-lamp="${id}" data-card="${id}">
+      <span class="lamp"></span>
+      <div>
+        <strong>${esc(point.name)}</strong>
+        <div data-value="${id}">—</div>
+        <div class="muted">${esc(addressLabel(point))}</div>
+        <p class="muted profile-detail" data-detail="${id}"></p>
+        ${point.writable ? profileWrite(point) : ""}
+      </div>
+    </article>`;
+  }
+  const numeric = point.dtype !== "bool" && point.function !== "coil";
+  const gauge = point.widget === "gauge" || point.widget === "setpoint";
+  return `<article class="profile-card" data-card="${id}">
+    <span class="kicker">${esc(point.name)}</span>
+    <div class="figure"><b data-value="${id}">—</b><small>${esc(point.unit)}</small></div>
+    ${gauge && numeric ? `<div class="bar"><span data-bar="${id}"></span></div>` : ""}
+    ${numeric ? `<svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true"><polyline data-spark="${id}" points=""></polyline></svg>` : ""}
+    <div class="profile-meta"><span class="tag" data-quality="${id}">—</span><span class="muted">${esc(addressLabel(point))}</span></div>
+    <p class="muted profile-detail" data-detail="${id}"></p>
+    ${point.writable ? profileWrite(point) : ""}
+  </article>`;
+}
+
+function profileHtml() {
+  if (!layoutOn("profile")) return "";
+  const points = profilePoints();
+  if (!points.length) {
+    if (!S.customise) return "";
+    return `<section class="profile-hmi"><h2>Register map</h2><p class="muted">Every enabled point is already drawn on the diagram above.</p></section>`;
+  }
+  const groups = profileGroups(points).map((group) => `
+    <section class="profile-group">
+      <h3 class="kicker">${esc(group.name)}</h3>
+      <div class="profile-grid">${group.points.map(profileCard).join("")}</div>
+    </section>`).join("");
+  return `<section class="profile-hmi" id="profileHmi">
+    <div class="section-head">
+      <div>
+        <h2>Register map</h2>
+        <p class="muted" id="profileLead">Connect to read these points from the chiller over Modbus TCP.</p>
+      </div>
+    </div>
+    ${groups}
+  </section>`;
 }
 
 function customiseBar(site) {
@@ -313,7 +493,7 @@ function customiseBar(site) {
     <div class="section-head">
       <div>
         <h2>Display</h2>
-        <p class="muted">Choose which parts of this plant page are shown, which point fills each tile, and how that point is drawn. Addresses and scaling stay on the register map. Changes are saved with this site.</p>
+        <p class="muted">Choose which parts of this plant page are shown, which point fills each tile, and how that point is drawn. Register map draws every other enabled point from the Modbus profile and fills it when this site is connected. Addresses and scaling stay on the register map. Changes are saved with this site.</p>
       </div>
       <button type="button" class="primary" data-action="customise-done">Done</button>
     </div>
@@ -403,7 +583,7 @@ function visiblePoints() {
 
 function lampCards() {
   const points = visiblePoints().filter((point) => point.widget === "status" || point.widget === "alarm");
-  if (!points.length) return `<p class="muted">No status or alarm points. Set a point’s widget to Status or Alarm.</p>`;
+  if (!points.length) return "";
   return points.map((point) => `
     <article class="lamp-card" data-lamp="${esc(point.id)}">
       <span class="lamp"></span>
@@ -413,9 +593,7 @@ function lampCards() {
 
 function controlCards() {
   const points = visiblePoints().filter((point) => point.writable);
-  if (!points.length) {
-    return `<p class="muted">No writable outputs. In the register map, mark a holding register or coil as writable and it will show up here.</p>`;
-  }
+  if (!points.length) return "";
   return points.map((point) => {
     const body = point.dtype === "bool" || point.function === "coil"
       ? `<div class="toggle" data-toggles="${esc(point.id)}">
@@ -549,6 +727,20 @@ function paintLive() {
       detail.textContent = `${vpn}${S.live.modbus.detail || ""}${rtt}`.trim();
     }
   }
+  const lead = document.getElementById("profileLead");
+  if (lead && S.site) {
+    if (!S.live || S.live.site_id !== S.siteId) {
+      lead.textContent = "Connect to read these points from the chiller over Modbus TCP.";
+    } else if (S.live.modbus.state === "polling") {
+      lead.textContent = `Live from ${S.live.modbus.host}:${S.live.modbus.port}, unit ${S.live.modbus.unit_id}. Each tile follows a point on this register map.`;
+    } else if (S.live.modbus.state === "connecting") {
+      lead.textContent = "Opening Modbus TCP…";
+    } else if (S.live.modbus.state === "error") {
+      lead.textContent = S.live.modbus.detail || "The controller did not answer.";
+    } else {
+      lead.textContent = "Connect to read these points from the chiller over Modbus TCP.";
+    }
+  }
   const banner = document.getElementById("alarmBanner");
   if (banner && S.site) {
     const alarms = visiblePoints().filter((point) => {
@@ -572,6 +764,10 @@ function paintLive() {
     const quality = reading?.quality || "bad";
     el.textContent = quality;
     el.className = `tag ${quality}`;
+  });
+  document.querySelectorAll("[data-detail]").forEach((el) => {
+    const reading = readingFor(el.dataset.detail);
+    el.textContent = reading?.quality === "good" ? "" : (reading?.detail || "");
   });
   document.querySelectorAll("[data-card]").forEach((el) => {
     const reading = readingFor(el.dataset.card);
@@ -656,7 +852,7 @@ function renderMap(main) {
   if (!S.pointId || !pointById(S.pointId)) S.pointId = site.points[0]?.id || null;
   const point = pointById(S.pointId);
   main.innerHTML = `
-    <p class="help">Match each point to the controller manual. On the plant page, Customise display chooses which of these points fill the HMI and how they are drawn.</p>
+    <p class="help">This register map is the Modbus profile. Connect, or choose Start live HMI on the connection page, and the plant page shows each enabled point from the live controller. Match area, address, type, and scale to the controller manual before trusting the numbers.</p>
     <div class="toolbar">
       <input id="pointSearch" type="search" placeholder="Filter points">
       <div class="actions">
@@ -826,7 +1022,8 @@ function renderLink(main) {
         </div>
         <label>Notes <textarea name="notes">${esc(site.notes)}</textarea></label>
         <div class="form-actions" style="margin-top:12px">
-          <button class="primary" type="submit">Save connection</button>
+          <button class="primary" type="button" data-action="live-hmi">Start live HMI</button>
+          <button type="submit">Save connection</button>
           <button type="button" data-action="test-link">Test Modbus</button>
         </div>
         <p id="testOut"></p>
@@ -973,6 +1170,20 @@ async function onClick(event) {
       link.download = `${S.site.name.replace(/\s+/g, "-").toLowerCase()}-map.json`;
       link.click();
       URL.revokeObjectURL(link.href);
+    });
+  } else if (action === "live-hmi") {
+    await guard(async () => {
+      const form = document.getElementById("linkForm");
+      if (form) {
+        S.site = await api(`/api/sites/${S.site.id}`, { method: "PUT", body: linkPayload(form) });
+      }
+      if (!sessionOpen()) {
+        S.live = await api(`/api/sites/${S.site.id}/connect`, { method: "POST" });
+      }
+      S.customise = false;
+      S.view = "plant";
+      render();
+      toast("Live HMI is reading this register map", true);
     });
   } else if (action === "test-link") {
     await guard(async () => {
