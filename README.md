@@ -2,6 +2,16 @@
 
 Local plant page for a water chiller on a Teltonika RUT. The laptop joins the network first. The app then opens Modbus TCP to the controller IP, the same way Modbus Monitor does, and shows an at-a-glance HMI in its own window. **Customise display** on the plant page chooses which sections are shown, which point fills each tile, and how each point is drawn. The register map — addresses, types, scaling, alarms, and which points can be written — is edited in the app.
 
+## Screenshots
+
+The demo chiller, in the Aqua Cooling colours.
+
+![Plant page with chilled-water temperatures, the water circuit, compressors, and the live register table](docs/screenshots/plant.png)
+
+![Register map with the chilled-water supply point open](docs/screenshots/register-map.png)
+
+![Connection page for the Modbus TCP address, port, and unit id](docs/screenshots/connection.png)
+
 ## Run
 
 ```bash
