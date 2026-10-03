@@ -7,7 +7,7 @@ import zlib
 from pathlib import Path
 
 SIZE = 256
-GREY = (107, 111, 116, 255)
+GREY = (88, 88, 88, 255)
 HERE = Path(__file__).resolve().parent
 WORDMARK = HERE / "icons" / "aqua-wordmark.png"
 
