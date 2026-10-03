@@ -104,7 +104,7 @@ function ensureShell() {
         <span class="mark">RUT</span>
         <div>
           <strong>Chiller Monitor</strong>
-          <small>Teltonika VPN · Modbus TCP</small>
+          <small>Modbus TCP</small>
         </div>
       </div>
       <label class="site-pick">Site
@@ -123,7 +123,7 @@ function ensureShell() {
     <nav class="tabs" id="tabs">
       <button type="button" data-view="plant" aria-selected="true">Plant</button>
       <button type="button" data-view="map" aria-selected="false">Register map</button>
-      <button type="button" data-view="link" aria-selected="false">VPN &amp; link</button>
+      <button type="button" data-view="link" aria-selected="false">Connection</button>
     </nav>
     <main id="main"></main>
     <div id="modal" class="modal" hidden>
@@ -208,7 +208,7 @@ function render() {
     main.innerHTML = `
       <section class="welcome">
         <h1>Watch a chiller through the RUT</h1>
-        <p>The engineer connects with the router’s WireGuard or OpenVPN profile, then this page polls the chiller controller over Modbus TCP. Addresses, scaling, and which values can be written are all edited in the register map. The plant view is the at-a-glance display.</p>
+        <p>Join the chiller network on this laptop, then this page opens Modbus TCP to the controller. On site that is the RUT Wi-Fi. Away from site, use the laptop’s existing remote connection first. Addresses, scaling, and which values can be written are edited in the register map.</p>
         <div class="actions">
           <button class="primary" type="button" data-action="demo">Start the demo chiller</button>
           <button type="button" data-action="add-site">Create a site</button>
@@ -623,76 +623,41 @@ function collectPoint(form) {
 
 function renderLink(main) {
   const site = S.site;
-  const toolNote = !S.meta.tools.wireguard || !S.meta.tools.openvpn
-    ? `This PC has ${S.meta.tools.wireguard ? "WireGuard" : "no WireGuard"}${S.meta.tools.openvpn ? " and OpenVPN" : " and no OpenVPN"}. You can still choose already connected if the tunnel is up in the operating system.`
-    : "WireGuard and OpenVPN are available on this PC.";
   main.innerHTML = `
     <section class="panel">
-      <h2>Link to the RUT</h2>
-      <p class="help">On the router, enable the VPN server (WireGuard or OpenVPN) and the Modbus TCP server or serial gateway. Export the client profile and load it here. The Modbus host is the address that answers once the tunnel is up: usually the RUT LAN address when it is gatewaying RS485, or the chiller’s own IP when the controller speaks Modbus TCP. Teltonika RMS VPN counts as already connected once your PC has joined it.</p>
-      <p class="help">${esc(toolNote)}</p>
+      <h2>Modbus TCP</h2>
+      <p class="help">Same connection Modbus Monitor uses. This program does not log into a VPN. Put the laptop on the network first, then enter the controller’s IP, port 502, and unit id.</p>
+      <p class="help">On site, join the RUT Wi-Fi or the site LAN. The address is the RUT LAN address when it is gatewaying the chiller, or the chiller’s own address when the controller speaks Modbus TCP. Away from site, connect the laptop over the internet or mobile data the way you already do, then use that same IP. Connect reopens the socket if the Wi-Fi drops.</p>
       <form id="linkForm">
         <div class="form-grid">
           <label>Site name <input name="name" required maxlength="80" value="${esc(site.name)}"></label>
           <label>Location <input name="location" maxlength="120" value="${esc(site.location)}"></label>
-          <label>Modbus host <input name="modbus_host" required value="${esc(site.modbus_host)}"></label>
+          <label>IP address <input name="modbus_host" required value="${esc(site.modbus_host)}"></label>
           <label>Port <input name="modbus_port" type="number" min="1" max="65535" value="${esc(site.modbus_port)}"></label>
           <label>Unit id <input name="unit_id" type="number" min="0" max="255" value="${esc(site.unit_id)}"></label>
-          <label>Timeout (s) <input name="timeout_s" type="number" min="0.2" max="30" step="0.1" value="${esc(site.timeout_s)}"></label>
+          <label>Response timeout (s) <input name="timeout_s" type="number" min="0.2" max="30" step="0.1" value="${esc(site.timeout_s)}"></label>
+          <label>Retries <input name="retries" type="number" min="1" max="10" step="1" value="${esc(site.retries ?? 3)}"></label>
+          <label>Link timeout (s) <input name="link_timeout_s" type="number" min="1" max="120" step="1" value="${esc(site.link_timeout_s ?? 30)}"></label>
           <label>Poll (ms) <input name="poll_ms" type="number" min="200" max="60000" step="100" value="${esc(site.poll_ms)}"></label>
-        </div>
-        <div class="check-row">
-          ${radio("none", "Already connected", site.vpn_mode)}
-          ${radio("wireguard", "WireGuard", site.vpn_mode)}
-          ${radio("openvpn", "OpenVPN", site.vpn_mode)}
-        </div>
-        <div id="vpnFields">
-          <div class="form-grid">
-            <label>Client profile <input id="vpnFile" type="file"></label>
-            <div class="form-actions" style="align-items:end">
-              <button type="button" data-action="upload-vpn">Upload profile</button>
-              <button type="button" data-action="clear-vpn">Remove profile</button>
-            </div>
-          </div>
-          <p class="muted" id="vpnFileName">${site.vpn_config_ready ? `Saved profile: ${esc(site.vpn_config_name)}` : "No profile uploaded."}</p>
-          <div class="form-grid" id="ovpnUser">
-            <label>OpenVPN username <input name="vpn_username" value="${esc(site.vpn_username)}" autocomplete="off"></label>
-            <label>OpenVPN password <input name="vpn_password" type="password" value="" placeholder="${site.vpn_password_set ? "Saved — leave blank to keep" : ""}" autocomplete="new-password"></label>
-            <label class="inline"><input type="checkbox" name="clear_vpn_password"> Remove saved password</label>
-          </div>
         </div>
         <label>Notes <textarea name="notes">${esc(site.notes)}</textarea></label>
         <div class="form-actions" style="margin-top:12px">
-          <button class="primary" type="submit">Save link</button>
+          <button class="primary" type="submit">Save connection</button>
           <button type="button" data-action="test-link">Test Modbus</button>
         </div>
         <p id="testOut"></p>
-        <p id="vpnState" class="muted"></p>
       </form>
     </section>
     <section class="panel">
       <h2>Remove this site</h2>
-      <p class="help">Deletes the saved map and VPN profile from this computer. It does not change the router or the chiller.</p>
+      <p class="help">Deletes the saved map from this computer. It does not change the router or the chiller.</p>
       <button type="button" class="danger" data-action="delete-site">Delete site</button>
     </section>`;
-  syncVpnFields();
-}
-
-function radio(value, label, current) {
-  return `<label class="inline"><input type="radio" name="vpn_mode" value="${value}"${value === current ? " checked" : ""}> ${esc(label)}</label>`;
-}
-
-function syncVpnFields() {
-  const mode = document.querySelector("input[name=vpn_mode]:checked")?.value || "none";
-  const fields = document.getElementById("vpnFields");
-  const user = document.getElementById("ovpnUser");
-  if (fields) fields.hidden = mode === "none";
-  if (user) user.hidden = mode !== "openvpn";
 }
 
 function linkPayload(form) {
   const value = (name) => form.elements[name].value;
-  const body = {
+  return {
     name: value("name").trim(),
     location: value("location").trim(),
     notes: value("notes"),
@@ -700,13 +665,10 @@ function linkPayload(form) {
     modbus_port: Number(value("modbus_port")),
     unit_id: Number(value("unit_id")),
     timeout_s: Number(value("timeout_s")),
+    retries: Number(value("retries")),
+    link_timeout_s: Number(value("link_timeout_s")),
     poll_ms: Number(value("poll_ms")),
-    vpn_mode: form.querySelector("input[name=vpn_mode]:checked").value,
-    vpn_username: form.elements.vpn_username ? value("vpn_username") : "",
-    clear_vpn_password: Boolean(form.elements.clear_vpn_password?.checked),
   };
-  if (form.elements.vpn_password && value("vpn_password")) body.vpn_password = value("vpn_password");
-  return body;
 }
 
 async function refreshSites(selectId) {
@@ -816,13 +778,6 @@ async function onClick(event) {
       link.download = `${S.site.name.replace(/\s+/g, "-").toLowerCase()}-map.json`;
       link.click();
       URL.revokeObjectURL(link.href);
-    });
-  } else if (action === "upload-vpn") {
-    await guard(uploadVpn);
-  } else if (action === "clear-vpn") {
-    await guard(async () => {
-      S.site = await api(`/api/sites/${S.site.id}/vpn-config`, { method: "DELETE" });
-      render();
     });
   } else if (action === "test-link") {
     await guard(async () => {
@@ -952,7 +907,6 @@ async function onChange(event) {
     }
     return;
   }
-  if (target.name === "vpn_mode") syncVpnFields();
   if (target.id === "importFile" && target.files?.[0]) {
     await guard(async () => {
       const text = await target.files[0].text();
@@ -972,18 +926,6 @@ function onInput(event) {
     });
   }
   if (event.target.form && event.target.form.id === "pointForm") wireHint();
-}
-
-async function uploadVpn() {
-  const input = document.getElementById("vpnFile");
-  if (!input?.files?.[0]) throw new Error("Choose a WireGuard or OpenVPN file first");
-  const form = document.getElementById("linkForm");
-  S.site = await api(`/api/sites/${S.site.id}`, { method: "PUT", body: linkPayload(form) });
-  const body = new FormData();
-  body.append("file", input.files[0]);
-  S.site = await api(`/api/sites/${S.site.id}/vpn-config`, { method: "POST", body });
-  render();
-  toast("VPN profile stored on this PC", true);
 }
 
 let lastSocketMessage = 0;

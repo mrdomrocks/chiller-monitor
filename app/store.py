@@ -167,7 +167,7 @@ def normalize_bindings(bindings: dict | None, points: list[dict]) -> dict[str, s
 def _clean_host(value: str) -> str:
     host = str(value or "").strip()
     if not host or len(host) > 253 or any(ch.isspace() for ch in host):
-        raise ValueError("Enter the Modbus host or IP reached through the VPN")
+        raise ValueError("Enter the Modbus IP address of the gateway or controller")
     return host
 
 
@@ -176,9 +176,6 @@ def _connection_fields(raw: dict, current: dict | None = None) -> dict:
     name = str(raw.get("name", current.get("name", ""))).strip()
     if not name or len(name) > 80:
         raise ValueError("Site name is required")
-    mode = raw.get("vpn_mode", current.get("vpn_mode", "none"))
-    if mode not in ("none", "wireguard", "openvpn"):
-        raise ValueError("VPN mode must be none, wireguard, or openvpn")
     port = int(raw.get("modbus_port", current.get("modbus_port", 502)))
     if not 1 <= port <= 65535:
         raise ValueError("Modbus port must be 1–65535")
@@ -191,25 +188,28 @@ def _connection_fields(raw: dict, current: dict | None = None) -> dict:
     poll = int(raw.get("poll_ms", current.get("poll_ms", 1000)))
     if not 200 <= poll <= 60000:
         raise ValueError("Poll interval must be between 200 ms and 60 s")
-    password = current.get("vpn_password", "")
-    if raw.get("clear_vpn_password"):
-        password = ""
-    elif raw.get("vpn_password"):
-        password = str(raw["vpn_password"])
+    retries = int(raw.get("retries", current.get("retries", 3)))
+    if not 1 <= retries <= 10:
+        raise ValueError("Retries must be between 1 and 10")
+    link_timeout = float(raw.get("link_timeout_s", current.get("link_timeout_s", 30)))
+    if not 1 <= link_timeout <= 120:
+        raise ValueError("Link timeout must be between 1 s and 120 s")
     return {
         "name": name,
         "location": str(raw.get("location", current.get("location", "")))[:120],
         "notes": str(raw.get("notes", current.get("notes", "")))[:500],
         "evap_label": str(raw.get("evap_label", current.get("evap_label", "Evaporator")))[:40] or "Evaporator",
         "cond_label": str(raw.get("cond_label", current.get("cond_label", "Condenser")))[:40] or "Condenser",
-        "vpn_mode": mode,
-        "vpn_username": str(raw.get("vpn_username", current.get("vpn_username", "")))[:80],
-        "vpn_password": password,
+        "vpn_mode": "none",
+        "vpn_username": current.get("vpn_username", ""),
+        "vpn_password": current.get("vpn_password", ""),
         "vpn_config_name": current.get("vpn_config_name"),
         "modbus_host": _clean_host(raw.get("modbus_host", current.get("modbus_host", "192.168.1.1"))),
         "modbus_port": port,
         "unit_id": unit,
         "timeout_s": timeout,
+        "retries": retries,
+        "link_timeout_s": link_timeout,
         "poll_ms": poll,
     }
 

@@ -1,4 +1,4 @@
-"""One live session: optional VPN, then a Modbus poll loop."""
+"""One live session: Modbus TCP on the laptop's current network."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ from app.blocks import plan_reads
 from app.decode import engineering_from_raw, encode_numeric, format_value, in_alarm, wire_bool
 from app.modbus_tcp import ModbusTcpClient
 from app.simulator import ChillerSimulator
-from app.store import DEMO_ID, ensure_demo, get_site, vpn_config_path
-from app.vpn import VpnSession
+from app.store import DEMO_ID, ensure_demo, get_site
 
 log = logging.getLogger("chiller")
 
@@ -42,8 +41,8 @@ class Monitor:
     def __init__(self) -> None:
         self.site_id: str | None = None
         self.client: ModbusTcpClient | None = None
-        self.vpn = VpnSession()
         self._sim: ChillerSimulator | None = None
+        self._last_good = 0.0
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._lock = asyncio.Lock()
@@ -68,16 +67,6 @@ class Monitor:
         site = get_site(site_id)
         async with self._lock:
             await self._teardown_locked()
-            try:
-                vpn_state, vpn_detail = await self.vpn.up(
-                    site["vpn_mode"],
-                    vpn_config_path(site),
-                    site.get("vpn_username") or "",
-                    site.get("vpn_password") or "",
-                )
-            except Exception:
-                await self.vpn.down()
-                raise
             self.site_id = site_id
             self._stop = asyncio.Event()
             self._last.clear()
@@ -88,8 +77,9 @@ class Monitor:
                 site["unit_id"],
                 site["timeout_s"],
             )
+            self._last_good = time.monotonic()
             self._task = asyncio.create_task(self._run(), name="chiller-poll")
-            self._publish(self._connecting(site, vpn_state, vpn_detail))
+            self._publish(self._connecting(site))
             log.info(
                 "Polling %s at %s:%s unit %s",
                 site["name"],
@@ -190,19 +180,30 @@ class Monitor:
             client.port = int(site["modbus_port"])
             client.unit = int(site["unit_id"])
             client.timeout = float(site["timeout_s"])
+        link_timeout = float(site.get("link_timeout_s", 30))
+        if self._last_good and time.monotonic() - self._last_good > link_timeout:
+            await client.close()
 
         started = time.perf_counter()
         blocks = plan_reads(site["points"])
         fetched: dict[int, list | Exception] = {}
         errors: list[str] = []
+        retries = int(site.get("retries", 3))
         for block in blocks:
             if self._stop.is_set():
                 return
-            try:
-                fetched[id(block)] = await client.read(block.function, block.address, block.count)
-            except Exception as exc:
-                fetched[id(block)] = exc
-                errors.append(str(exc))
+            failure: Exception | None = None
+            for _attempt in range(retries):
+                try:
+                    fetched[id(block)] = await client.read(block.function, block.address, block.count)
+                    failure = None
+                    break
+                except Exception as exc:
+                    failure = exc
+                    await client.close()
+            if failure is not None:
+                fetched[id(block)] = failure
+                errors.append(str(failure))
         rtt = (time.perf_counter() - started) * 1000
         by_id = {point["id"]: point for point in site["points"]}
         values: dict[str, dict] = {}
@@ -244,6 +245,8 @@ class Monitor:
             state, detail = "polling", "Partial read: " + errors[0]
         else:
             state, detail = "polling", f"Unit {site['unit_id']}"
+        if good:
+            self._last_good = time.monotonic()
         previous_vpn = self._snap.get("vpn") or {"state": "down", "detail": ""}
         self._publish(
             {
@@ -281,7 +284,6 @@ class Monitor:
                 pass
             except Exception:
                 log.exception("Poller stopped after an error")
-        await self.vpn.down()
         self.site_id = None
         self._last.clear()
         self._history.clear()
@@ -295,12 +297,12 @@ class Monitor:
         if simulator is not None:
             await simulator.stop()
 
-    def _connecting(self, site: dict, vpn_state: str, vpn_detail: str) -> dict:
+    def _connecting(self, site: dict) -> dict:
         return {
             "site_id": site["id"],
             "demo": site["id"] == DEMO_ID and self._sim is not None,
             "simulator_running": self._sim is not None,
-            "vpn": {"state": vpn_state, "detail": vpn_detail},
+            "vpn": {"state": "skipped", "detail": "Using this laptop's current network."},
             "modbus": {
                 "state": "connecting",
                 "detail": "Opening Modbus TCP",

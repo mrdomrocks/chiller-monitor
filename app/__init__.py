@@ -1,3 +1,3 @@
-"""Local HMI for a chiller reached through a Teltonika RUT VPN."""
+"""Local HMI for a chiller polled over Modbus TCP."""
 
 __version__ = "0.1.0"
