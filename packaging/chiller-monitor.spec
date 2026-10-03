@@ -1,6 +1,8 @@
+%{!?chiller_release:%global chiller_release 5}
+
 Name:           chiller-monitor
 Version:        0.1.0
-Release:        5%{?dist}
+Release:        %{chiller_release}%{?dist}
 Summary:        Local HMI for a chiller polled over Modbus TCP
 License:        LicenseRef-Proprietary
 URL:            https://github.com/mrdomrocks/chiller-monitor
@@ -43,6 +45,7 @@ find %{buildroot}/opt/chiller-monitor/lib -type d -name __pycache__ -print0 | xa
 install -d %{buildroot}%{_bindir}
 install -m 0755 %{_repodir}/packaging/rpm/chiller-monitor.sh %{buildroot}%{_bindir}/chiller-monitor
 install -m 0644 %{_repodir}/packaging/icons/chiller-monitor.png %{buildroot}/opt/chiller-monitor/chiller-monitor.png
+install -m 0644 %{_repodir}/packaging/.build/REVISION %{buildroot}/opt/chiller-monitor/REVISION
 install -d %{buildroot}%{_datadir}/applications
 install -m 0644 %{_repodir}/packaging/rpm/chiller-monitor.desktop %{buildroot}%{_datadir}/applications/chiller-monitor.desktop
 install -d %{buildroot}%{_datadir}/icons/hicolor/256x256/apps

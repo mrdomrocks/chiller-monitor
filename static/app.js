@@ -132,6 +132,10 @@ function ensureShell() {
         <button type="button" data-action="add-site">New site</button>
       </div>
     </header>
+    <p class="update-banner" id="updateBanner" hidden>
+      A newer Chiller Monitor is on GitHub.
+      <button type="button" data-action="install-update">Download and install</button>
+    </p>
     <nav class="tabs" id="tabs">
       <button type="button" data-view="plant" aria-selected="true">Plant</button>
       <button type="button" data-view="map" aria-selected="false">Register map</button>
@@ -1139,6 +1143,13 @@ async function onClick(event) {
     });
     return;
   }
+  if (action === "install-update") {
+    await guard(async () => {
+      const result = await api("/api/update/install", { method: "POST" });
+      toast(result.detail || "Installing the update", true);
+    });
+    return;
+  }
   if (action === "demo") {
     await guard(async () => {
       if (S.live?.simulator_running) {
@@ -1430,6 +1441,17 @@ async function boot() {
   await refreshSites(S.live.site_id);
   connectSocket();
   setInterval(() => { keepFresh(); }, 1000);
+  checkUpdate();
+}
+
+async function checkUpdate() {
+  try {
+    const info = await api("/api/update");
+    const banner = document.getElementById("updateBanner");
+    if (banner) banner.hidden = !info.available;
+  } catch {
+    /* stay on this version when GitHub cannot be reached */
+  }
 }
 
 boot().catch((error) => {

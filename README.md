@@ -28,6 +28,10 @@ packaging/build-all.sh
 
 Close the program window to stop it. Choose **Demo chiller** to try the HMI without a controller. **Customise display** changes the plant page for that site.
 
+## Updates
+
+A push to `main` builds a Windows installer and a Fedora/Nobara RPM, then publishes them as a GitHub release. An installed copy checks that release when it opens. **Download and install** replaces the program and reopens it. Site profiles are kept. Linux asks for your password. Install this version once on each computer; copies from before the update check cannot see later releases until they are installed again.
+
 ## Connection
 
 1. Put the chiller on the RUT. A controller with RS485 uses a serial model (for example a RUT956) and RutOS **Services → Modbus** as a Modbus TCP gateway. A controller that already speaks Modbus TCP only needs to be on the RUT LAN.

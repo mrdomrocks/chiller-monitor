@@ -24,3 +24,7 @@ def data_dir() -> Path:
 
 def vpn_dir() -> Path:
     return data_dir() / "vpn"
+
+
+def revision_file() -> Path:
+    return ROOT / "REVISION"

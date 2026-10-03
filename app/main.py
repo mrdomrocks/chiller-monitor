@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 from contextlib import asynccontextmanager
@@ -34,6 +35,7 @@ from app.store import (
     normalize_point,
 )
 from app.template import ROLES
+from app.update import begin_install, describe_update, schedule_exit
 
 log = logging.getLogger("chiller")
 monitor = Monitor()
@@ -61,6 +63,21 @@ app.mount("/static", _Static(directory=ROOT / "static"), name="static")
 @app.get("/")
 def index():
     return FileResponse(ROOT / "static" / "index.html")
+
+
+@app.get("/api/update")
+async def read_update():
+    return await asyncio.to_thread(describe_update)
+
+
+@app.post("/api/update/install")
+async def install_update():
+    try:
+        result = await asyncio.to_thread(begin_install)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    schedule_exit()
+    return result
 
 
 @app.get("/api/meta")

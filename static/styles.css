@@ -92,6 +92,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   outline-offset: 2px;
 }
 
+.update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding: 10px 20px;
+  background: #2a2416;
+  color: var(--amber);
+}
+
 .tabs {
   display: flex;
   gap: 6px;

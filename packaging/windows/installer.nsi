@@ -51,6 +51,7 @@ Section "Install"
   File "staging\chiller-monitor.pyw"
   File "staging\chiller-monitor.ico"
   File "staging\README.txt"
+  File "staging\REVISION"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   CreateDirectory "$SMPROGRAMS\Chiller Monitor"

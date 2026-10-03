@@ -77,8 +77,10 @@ cp "$ROOT/packaging/windows/Chiller Monitor.bat" "$STAGE/Chiller Monitor.bat"
 cp "$ROOT/packaging/windows/chiller-monitor.pyw" "$STAGE/chiller-monitor.pyw"
 cp "$ROOT/packaging/icons/chiller-monitor.ico" "$STAGE/chiller-monitor.ico"
 cp "$ROOT/packaging/windows/README.txt" "$STAGE/README.txt"
+rev=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo dev)
+printf '%s\n' "$rev" > "$STAGE/REVISION"
 
-if [[ ! -x "$NSIS/makensis.exe" ]]; then
+if ! command -v makensis >/dev/null 2>&1 && [[ ! -x "$NSIS/makensis.exe" ]]; then
   mkdir -p "$ROOT/packaging/.build"
   nsis_zip="$ROOT/packaging/.build/nsis.zip"
   if [[ ! -f "$nsis_zip" ]]; then
@@ -104,6 +106,10 @@ rm -f "$outfile"
 sed "s|__OUTFILE__|../../../dist/ChillerMonitor-${VERSION}-Setup.exe|" \
   "$ROOT/packaging/windows/installer.nsi" > "$WORK/installer.nsi"
 
-export WINEDEBUG=-all
-(cd "$WORK" && wine "$NSIS/makensis.exe" installer.nsi)
+if command -v makensis >/dev/null 2>&1; then
+  (cd "$WORK" && makensis installer.nsi)
+else
+  export WINEDEBUG=-all
+  (cd "$WORK" && wine "$NSIS/makensis.exe" installer.nsi)
+fi
 echo "Windows installer: $outfile"

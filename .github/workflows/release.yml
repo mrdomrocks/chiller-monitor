@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip nsis rsync unzip curl
+      - name: Build the Windows installer
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+          packaging/build-windows.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/ChillerMonitor-*-Setup.exe
+
+  rpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build the RPM on Fedora
+        run: |
+          docker run --rm -v "$PWD":/src -w /src -e PIP_BREAK_SYSTEM_PACKAGES=1 fedora:44 bash -s << 'EOF'
+          dnf install -y python3 python3-pip rpm-build rsync git findutils
+          packaging/build-rpm.sh
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm
+          path: dist/chiller-monitor-*.rpm
+
+  publish:
+    needs: [windows, rpm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-rpm
+          path: dist
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ github.event.head_commit.message || github.sha }}
+        run: |
+          set -euo pipefail
+          mv dist/ChillerMonitor-*-Setup.exe dist/ChillerMonitor-Setup.exe
+          mv dist/chiller-monitor-*.rpm dist/chiller-monitor.x86_64.rpm
+          printf '%s\n' "$NOTES" > notes.txt
+          if gh release view "${{ github.sha }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release delete "${{ github.sha }}" --repo "${{ github.repository }}" --yes --cleanup-tag
+          fi
+          gh release create "${{ github.sha }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Chiller Monitor ${{ github.sha }}" \
+            --notes-file notes.txt \
+            dist/ChillerMonitor-Setup.exe \
+            dist/chiller-monitor.x86_64.rpm
