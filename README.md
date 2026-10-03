@@ -22,6 +22,8 @@ The server listens on this computer only. Site profiles stay in `data/` and are 
 3. Create a site and set the IP address, port 502, and the controller unit id. Connect. The program polls that socket and opens a new one if the link drops.
 4. Open **Register map** and match every point to the controller manual: area, address, data type, byte order, scale, and bit. Mark setpoints and coils as writable if the engineer is allowed to change them. Bind the plant slots to those points.
 
+The plant page reads the fitted-compressor register and shows that many circuits, each with its load percentage, up to six. A chiller that reports 2 shows two cards. A larger machine shows the extra compressors. Match **Fitted compressors**, each **Compressor N** load, and each run bit to the controller. On the demo chiller that count can be written, so both sizes can be checked.
+
 ## Tests
 
 ```bash

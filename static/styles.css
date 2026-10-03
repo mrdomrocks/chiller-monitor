@@ -105,7 +105,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 main { padding: 16px 20px 40px; }
 
-.welcome, .panel, .hero-card, .node, .vessel, .lamp-card, .control, .table-wrap {
+.welcome, .panel, .hero-card, .node, .vessel, .lamp-card, .control, .table-wrap, .comp-card {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -222,6 +222,39 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
   gap: 10px;
   margin-bottom: 12px;
 }
+.compressor-bank { margin-bottom: 16px; }
+.compressors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.comp-card { padding: 14px; }
+.comp-card .figure b { font-size: 2rem; }
+.comp-card.off { opacity: 0.72; }
+.comp-card .state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+}
+.comp-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.comp-count button[aria-pressed="true"] {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.bind-section {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 0 0 14px;
+  padding: 12px;
+}
+.bind-section legend { padding: 0 6px; color: var(--amber); }
 .lamp-card, .control, .readout { padding: 12px; }
 .lamp-card { display: flex; align-items: center; gap: 10px; }
 .lamp-card .lamp { width: 16px; height: 16px; }
@@ -300,7 +333,7 @@ textarea { min-height: 72px; resize: vertical; }
   .hero, .loop, .split { grid-template-columns: 1fr; }
   .pipe { display: none; }
   .top-actions { margin-left: 0; }
-  .plant-head { flex-direction: column; align-items: start; }
+  .plant-head, .section-head { flex-direction: column; align-items: start; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pipe { animation: none !important; }

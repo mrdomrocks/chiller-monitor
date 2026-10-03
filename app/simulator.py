@@ -10,7 +10,7 @@ import time
 from app.decode import engineering_from_raw, encode_numeric, register_count, wire_address, wire_bool
 from app.modbus_tcp import ModbusDevice, serve_device
 from app.store import DEMO_ID, get_site
-from app.template import default_points
+from app.template import MAX_COMPRESSORS, default_points
 
 log = logging.getLogger("chiller.demo")
 
@@ -29,7 +29,39 @@ DEFAULTS: dict[str, float | bool] = {
     "general_alarm": False,
     "enable": True,
     "power": 48.0,
+    "compressor_count": 2,
 }
+
+
+def fitted_count(value, default: int = 2) -> int:
+    try:
+        count = int(round(float(value)))
+    except (TypeError, ValueError):
+        return default
+    if 1 <= count <= MAX_COMPRESSORS:
+        return count
+    return default
+
+
+def stage_loads(count: int, capacity: float, enabled: bool) -> list[tuple[float, bool]]:
+    """Stage compressor load across the fitted machines. Unused slots stay at 0%."""
+    count = fitted_count(count, default=0) if count else 0
+    idle = [(0.0, False)] * MAX_COMPRESSORS
+    if count <= 0 or not enabled or capacity <= 0:
+        return idle
+    span = 100.0 / count
+    loads: list[tuple[float, bool]] = []
+    for index in range(MAX_COMPRESSORS):
+        if index >= count:
+            loads.append((0.0, False))
+            continue
+        threshold = index * span
+        if capacity <= threshold:
+            loads.append((0.0, False))
+            continue
+        portion = min(100.0, max(0.0, (capacity - threshold) / span * 100.0))
+        loads.append((portion, True))
+    return loads
 
 
 def _grow(items: list, address: int, fill):
@@ -161,7 +193,6 @@ class ChillerSimulator:
             "cond_out": cond_in + 5.0,
             "flow": 18 + math.sin(now / 9.0),
             "pressure": 2.3 + math.sin(now / 10.0) * 0.15,
-            "compressor": bool(enabled),
             "evap_pump": True,
             "cond_pump": True,
             "general_alarm": supply > limit,
@@ -169,6 +200,16 @@ class ChillerSimulator:
             "power": 22 + max(capacity, 0) * 0.45,
         }
         for point in points:
-            if point["writable"] and point["id"] not in ("setpoint", "enable"):
+            if point["writable"] and point["id"] not in ("setpoint", "enable", "compressor_count"):
                 values[point["id"]] = read_engineering(self.device, point, 0)
+        count = 2
+        count_point = by_id.get("compressor_count")
+        if count_point is not None and count_point.get("writable"):
+            count = fitted_count(read_engineering(self.device, count_point, 2))
+        values["compressor_count"] = count
+        staged = stage_loads(count, float(capacity), bool(enabled))
+        for index, (load, running) in enumerate(staged, start=1):
+            values[f"comp_{index}_load"] = load
+            values[f"comp_{index}_run"] = running
+        values["compressor"] = any(running for _load, running in staged)
         paint(self.device, points, values)

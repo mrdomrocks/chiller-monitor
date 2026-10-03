@@ -4,20 +4,31 @@ from __future__ import annotations
 
 import copy
 
+MAX_COMPRESSORS = 6
+
 ROLES = [
-    {"id": "supply_temp", "label": "Chilled water supply", "kind": "analog"},
-    {"id": "return_temp", "label": "Chilled water return", "kind": "analog"},
-    {"id": "setpoint", "label": "Setpoint", "kind": "analog"},
-    {"id": "capacity", "label": "Capacity", "kind": "analog"},
-    {"id": "condenser_in", "label": "Condenser inlet", "kind": "analog"},
-    {"id": "condenser_out", "label": "Condenser outlet", "kind": "analog"},
-    {"id": "flow", "label": "Chilled water flow", "kind": "analog"},
-    {"id": "pressure", "label": "Chilled water pressure", "kind": "analog"},
-    {"id": "compressor", "label": "Compressor", "kind": "bool"},
-    {"id": "evap_pump", "label": "Evaporator pump", "kind": "bool"},
-    {"id": "cond_pump", "label": "Condenser pump", "kind": "bool"},
-    {"id": "alarm", "label": "General alarm", "kind": "bool"},
+    {"id": "supply_temp", "label": "Chilled water supply", "kind": "analog", "section": "Water"},
+    {"id": "return_temp", "label": "Chilled water return", "kind": "analog", "section": "Water"},
+    {"id": "setpoint", "label": "Setpoint", "kind": "analog", "section": "Water"},
+    {"id": "capacity", "label": "Capacity", "kind": "analog", "section": "Water"},
+    {"id": "condenser_in", "label": "Condenser inlet", "kind": "analog", "section": "Water"},
+    {"id": "condenser_out", "label": "Condenser outlet", "kind": "analog", "section": "Water"},
+    {"id": "flow", "label": "Chilled water flow", "kind": "analog", "section": "Water"},
+    {"id": "pressure", "label": "Chilled water pressure", "kind": "analog", "section": "Water"},
+    {"id": "compressor", "label": "Compressor", "kind": "bool", "section": "Status"},
+    {"id": "evap_pump", "label": "Evaporator pump", "kind": "bool", "section": "Status"},
+    {"id": "cond_pump", "label": "Condenser pump", "kind": "bool", "section": "Status"},
+    {"id": "alarm", "label": "General alarm", "kind": "bool", "section": "Status"},
+    {"id": "compressor_count", "label": "Fitted compressors", "kind": "analog", "section": "Compressors"},
 ]
+ROLES.extend(
+    {"id": f"comp_{index}_load", "label": f"Compressor {index} load", "kind": "analog", "section": "Compressors"}
+    for index in range(1, MAX_COMPRESSORS + 1)
+)
+ROLES.extend(
+    {"id": f"comp_{index}_run", "label": f"Compressor {index} run", "kind": "bool", "section": "Compressors"}
+    for index in range(1, MAX_COMPRESSORS + 1)
+)
 
 
 def _point(**overrides) -> dict:
@@ -182,7 +193,7 @@ def default_points() -> list[dict]:
                 id="compressor",
                 name="Compressor",
                 group="Status",
-                notes="Bit 0 of status word 40009.",
+                notes="Bit 0 of status word 40009. Plant run lamp: on when any fitted compressor is running.",
                 address_number=40009,
                 dtype="bool",
                 bit=0,
@@ -258,12 +269,61 @@ def default_points() -> list[dict]:
                 gauge_max=150,
                 sort=140,
             ),
+            *_compressor_points(),
         ]
     )
 
 
+def _compressor_points() -> list[dict]:
+    points = [
+        _point(
+            id="compressor_count",
+            name="Fitted compressors",
+            group="Compressors",
+            notes="Register value 1–6. The plant page shows that many compressor cards and hides the rest.",
+            address_number=40013,
+            dtype="uint16",
+            widget="hidden",
+            sort=150,
+        )
+    ]
+    for index in range(1, MAX_COMPRESSORS + 1):
+        points.append(
+            _point(
+                id=f"comp_{index}_load",
+                name=f"Compressor {index}",
+                group="Compressors",
+                notes=f"Load percentage for compressor {index}. Shown when fitted compressors is {index} or more.",
+                address_number=40013 + index,
+                dtype="uint16",
+                unit="%",
+                widget="hidden",
+                gauge_min=0,
+                gauge_max=100,
+                sort=150 + index * 10,
+            )
+        )
+    for index in range(1, MAX_COMPRESSORS + 1):
+        points.append(
+            _point(
+                id=f"comp_{index}_run",
+                name=f"Compressor {index} run",
+                group="Compressors",
+                notes=f"Bit {index - 1} of register 40020. Running or stopped for compressor {index}.",
+                address_number=40020,
+                dtype="bool",
+                bit=index - 1,
+                widget="hidden",
+                on_label="Running",
+                off_label="Stopped",
+                sort=220 + index,
+            )
+        )
+    return points
+
+
 def default_bindings() -> dict[str, str | None]:
-    return {
+    bindings = {
         "supply_temp": "chw_supply",
         "return_temp": "chw_return",
         "setpoint": "setpoint",
@@ -276,4 +336,9 @@ def default_bindings() -> dict[str, str | None]:
         "evap_pump": "evap_pump",
         "cond_pump": "cond_pump",
         "alarm": "general_alarm",
+        "compressor_count": "compressor_count",
     }
+    for index in range(1, MAX_COMPRESSORS + 1):
+        bindings[f"comp_{index}_load"] = f"comp_{index}_load"
+        bindings[f"comp_{index}_run"] = f"comp_{index}_run"
+    return bindings

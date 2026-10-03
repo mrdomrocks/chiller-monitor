@@ -460,6 +460,20 @@ def apply_template(site_id: str) -> dict:
         return public_site(site)
 
 
+def _fill_missing_template(site: dict) -> None:
+    taken = {point["id"] for point in site["points"]}
+    for raw in default_points():
+        if raw["id"] not in taken:
+            site["points"].append(normalize_point(raw))
+            taken.add(raw["id"])
+    ids = {point["id"] for point in site["points"]}
+    bindings = normalize_bindings(site.get("bindings"), site["points"])
+    for role_id, point_id in default_bindings().items():
+        if bindings.get(role_id) is None and point_id in ids:
+            bindings[role_id] = point_id
+    site["bindings"] = bindings
+
+
 def ensure_demo(port: int) -> dict:
     with _LOCK:
         data = _load()
@@ -480,6 +494,13 @@ def ensure_demo(port: int) -> dict:
             found["modbus_host"] = "127.0.0.1"
             found["modbus_port"] = int(port)
             found["vpn_mode"] = "none"
+        _fill_missing_template(found)
+        for point in found["points"]:
+            if point["id"] == "compressor_count":
+                point["writable"] = True
+                point["write_min"] = 1
+                point["write_max"] = 6
+                point["widget"] = "hidden"
         _save(data)
         return deepcopy(found)
 

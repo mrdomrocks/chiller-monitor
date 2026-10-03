@@ -11,6 +11,7 @@ const S = {
 let shellReady = false;
 let busy = false;
 let toastTimer = 0;
+let compressorKey = "";
 
 const FC = { coil: 1, discrete: 2, holding: 3, input: 4 };
 const BASE = { coil: 1, discrete: 10001, input: 30001, holding: 40001 };
@@ -85,14 +86,14 @@ function sessionOpen() {
 async function guard(work) {
   if (busy) return;
   busy = true;
-  paintHeader();
+  paintLive();
   try {
     await work();
   } catch (error) {
     toast(error.message || String(error));
   } finally {
     busy = false;
-    paintHeader();
+    paintLive();
   }
 }
 
@@ -200,6 +201,7 @@ function paintHeader() {
 }
 
 function render() {
+  compressorKey = "";
   ensureShell();
   fillSiteSelect();
   paintHeader();
@@ -239,10 +241,22 @@ function renderPlant(main) {
       ${loop("cold", "return_temp", site.evap_label || "Evaporator", "supply_temp")}
       ${loop("hot", "condenser_in", site.cond_label || "Condenser", "condenser_out")}
     </section>
+    <section class="compressor-bank">
+      <div class="section-head">
+        <div>
+          <h2>Compressors</h2>
+          <p class="muted" id="compressorSummary"></p>
+        </div>
+        <div class="comp-count" id="compressorStepper" hidden>
+          <span class="kicker">Fitted</span>
+          ${compressorIndexes().map((n) => `<button type="button" data-action="write-count" data-count="${n}" data-requires-connection aria-label="Show ${n} compressors">${n}</button>`).join("")}
+        </div>
+      </div>
+      <div class="compressors" id="compressorGrid"></div>
+    </section>
     <section class="side-reads">
       ${readout("flow")}
       ${readout("pressure")}
-      ${readout("compressor")}
     </section>
     <h2 class="kicker" style="margin:6px 0">Status</h2>
     <section class="lamps" id="lamps">${lampCards()}</section>
@@ -349,8 +363,98 @@ function addressLabel(point) {
   return `${prefix} ${point.address_number}${point.bit === null || point.bit === undefined ? "" : " bit " + point.bit}`;
 }
 
+function compressorIndexes() {
+  const found = (S.meta?.roles || [])
+    .map((role) => /^comp_(\d+)_load$/.exec(role.id))
+    .filter(Boolean)
+    .map((match) => Number(match[1]));
+  return found.length ? found.sort((a, b) => a - b) : [1, 2, 3, 4, 5, 6];
+}
+
+function compressorView() {
+  const indexes = compressorIndexes();
+  const limit = indexes.length ? indexes[indexes.length - 1] : 6;
+  const countPoint = bound("compressor_count");
+  const reading = countPoint ? readingFor(countPoint.id) : null;
+  const good = Boolean(reading && reading.quality === "good" && typeof reading.value === "number" && Number.isFinite(reading.value));
+  if (countPoint && !good) {
+    return { state: "waiting", slots: [], countPoint, reported: null, raw: null };
+  }
+  if (good) {
+    const raw = Math.round(reading.value);
+    const shown = Math.max(0, Math.min(limit, raw));
+    const slots = [];
+    for (const index of indexes) {
+      if (index > shown) break;
+      slots.push({ index, load: bound(`comp_${index}_load`), run: bound(`comp_${index}_run`) });
+    }
+    return { state: "live", slots, countPoint, reported: shown, raw };
+  }
+  const slots = [];
+  for (const index of indexes) {
+    const load = bound(`comp_${index}_load`);
+    const run = bound(`comp_${index}_run`);
+    if (load || run) slots.push({ index, load, run });
+  }
+  return { state: slots.length ? "mapped" : "empty", slots, countPoint: null, reported: slots.length, raw: null };
+}
+
+function compressorCard(slot) {
+  const title = slot.load?.name || slot.run?.name || `Compressor ${slot.index}`;
+  const load = slot.load
+    ? `<div class="figure"><b data-value="${esc(slot.load.id)}">—</b><small>${esc(slot.load.unit || "%")}</small></div>
+       <div class="bar"><span data-bar="${esc(slot.load.id)}"></span></div>`
+    : `<div class="figure"><b>—</b><small>%</small></div>`;
+  const run = slot.run
+    ? `<div class="state" data-comprun="${esc(slot.run.id)}"><span class="lamp"></span><span data-value="${esc(slot.run.id)}">—</span></div>`
+    : "";
+  const card = slot.load ? ` data-card="${esc(slot.load.id)}"` : "";
+  return `<article class="comp-card"${card}>
+    <span class="kicker">${esc(title)}</span>
+    ${load}
+    ${run}
+  </article>`;
+}
+
+function paintCompressors() {
+  const grid = document.getElementById("compressorGrid");
+  const summary = document.getElementById("compressorSummary");
+  const stepper = document.getElementById("compressorStepper");
+  if (!grid || !S.site) return;
+  const view = compressorView();
+  const key = [
+    view.state,
+    view.raw,
+    view.reported,
+    view.slots.map((slot) => `${slot.index}:${slot.load?.id || ""}:${slot.run?.id || ""}`).join(","),
+  ].join("|");
+  if (summary) summary.textContent = compressorSummary(view);
+  if (stepper) {
+    const writable = Boolean(view.countPoint && view.countPoint.writable);
+    stepper.hidden = !writable;
+    stepper.querySelectorAll("button").forEach((button) => {
+      button.setAttribute("aria-pressed", Number(button.dataset.count) === view.reported ? "true" : "false");
+    });
+  }
+  if (key === compressorKey && grid.childElementCount === view.slots.length) return;
+  compressorKey = key;
+  grid.innerHTML = view.slots.map(compressorCard).join("");
+}
+
+function compressorSummary(view) {
+  if (view.state === "waiting") return "Waiting for the controller to report how many compressors are fitted.";
+  if (view.state === "empty") return "Bind a fitted-compressor count, or each compressor load, in the register map.";
+  const count = view.reported;
+  const noun = count === 1 ? "compressor" : "compressors";
+  if (view.state === "mapped") return `${count} ${noun} on this map.`;
+  if (view.raw != null && view.raw > count) return `Controller reports ${view.raw}. Showing ${count}.`;
+  if (!count) return "The controller reports no compressors.";
+  return `${count} ${noun} fitted`;
+}
+
 function paintLive() {
   paintHeader();
+  paintCompressors();
   const flag = document.getElementById("demoFlag");
   if (flag) flag.hidden = !(S.live && S.live.demo && S.live.site_id === S.siteId);
   const detail = document.getElementById("commsDetail");
@@ -408,6 +512,17 @@ function paintLive() {
     const series = S.live && S.live.site_id === S.siteId ? S.live.history?.[el.dataset.spark] : null;
     el.setAttribute("points", sparkPoints(series));
   });
+  document.querySelectorAll("[data-comprun]").forEach((el) => {
+    const reading = readingFor(el.dataset.comprun);
+    const on = Boolean(reading && reading.quality === "good" && reading.value);
+    const card = el.closest(".comp-card");
+    if (card) card.classList.toggle("off", Boolean(reading && reading.quality === "good" && !reading.value));
+    const lamp = el.querySelector(".lamp");
+    if (!lamp) return;
+    lamp.className = "lamp";
+    if (reading?.quality === "good" && on) lamp.classList.add("ok");
+    else if (reading?.quality === "stale") lamp.classList.add("wait");
+  });
   document.querySelectorAll("[data-lamp]").forEach((el) => {
     const point = pointById(el.dataset.lamp);
     const reading = readingFor(el.dataset.lamp);
@@ -461,15 +576,13 @@ function renderMap(main) {
   main.innerHTML = `
     <section class="panel">
       <div class="section-head"><h2>Plant display</h2></div>
-      <p class="help">Bind each slot on the plant page to a point. Renaming the point changes the label the operator sees. Vessel names are for the diagram only.</p>
+      <p class="help">Bind each slot on the plant page to a point. Renaming the point changes the label the operator sees. Vessel names are for the diagram only. Compressor cards follow the fitted-compressors register: a machine that reports 2 shows two loads, and a larger machine shows the extra circuits, up to six.</p>
       <form id="hmiForm">
         <div class="bindings">
           <label>Evaporator label <input name="evap_label" value="${esc(site.evap_label)}"></label>
           <label>Heat-rejection label <input name="cond_label" value="${esc(site.cond_label)}"></label>
-          ${S.meta.roles.map((role) => `<label>${esc(role.label)}
-            <select data-binding="${esc(role.id)}">${pointOptions(site.bindings[role.id])}</select>
-          </label>`).join("")}
         </div>
+        ${bindingSections(site)}
         <button class="primary" type="submit">Save labels</button>
       </form>
     </section>
@@ -487,6 +600,28 @@ function renderMap(main) {
       <section class="panel" id="pointPanel">${point ? pointForm(point) : "<p>Add a point to begin.</p>"}</section>
     </div>`;
   wireHint();
+}
+
+function bindingSections(site) {
+  const sections = [];
+  for (const role of S.meta.roles) {
+    const name = role.section || "Plant";
+    let section = sections.find((item) => item.name === name);
+    if (!section) {
+      section = { name, roles: [] };
+      sections.push(section);
+    }
+    section.roles.push(role);
+  }
+  return sections.map((section) => `
+    <fieldset class="bind-section">
+      <legend>${esc(section.name)}</legend>
+      <div class="bindings">
+        ${section.roles.map((role) => `<label>${esc(role.label)}
+          <select data-binding="${esc(role.id)}">${pointOptions(site.bindings[role.id])}</select>
+        </label>`).join("")}
+      </div>
+    </fieldset>`).join("");
 }
 
 function pointOptions(selected) {
@@ -807,6 +942,15 @@ async function onClick(event) {
       const registers = raw ? raw.split(/[,\s]+/).map(Number) : [];
       const result = await api("/api/preview", { method: "POST", body: { point: collectPoint(form), registers } });
       document.getElementById("previewOut").textContent = `${result.display}`;
+    });
+  } else if (action === "write-count") {
+    const point = bound("compressor_count");
+    const count = Number(button.dataset.count);
+    if (!point || !point.writable || !Number.isInteger(count)) return;
+    if (!confirm(`Write ${count} fitted compressors to ${point.name}?`)) return;
+    await guard(async () => {
+      await api(`/api/sites/${S.site.id}/write`, { method: "POST", body: { point_id: point.id, value: count } });
+      toast(`${count} compressors fitted`, true);
     });
   } else if (action === "write-bool") {
     const point = pointById(button.dataset.point);
