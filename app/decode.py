@@ -14,7 +14,7 @@ import math
 import struct
 
 FUNCTIONS = ("coil", "discrete", "holding", "input")
-DTYPES = ("bool", "uint16", "int16", "uint32", "int32", "float32", "float64")
+DTYPES = ("bool", "uint16", "int16", "uint32", "int32", "float32", "float64", "string")
 ORDERS = ("ABCD", "CDAB", "BADC", "DCBA")
 
 MODICON_BASE = {
@@ -55,6 +55,29 @@ def register_count(dtype: str) -> int:
     if dtype not in _WIDTH:
         raise ValueError(f"Unknown data type {dtype}")
     return _WIDTH[dtype]
+
+
+def string_registers(point: dict) -> int:
+    chars = int(point.get("string_chars") or 16)
+    if not 1 <= chars <= 40:
+        raise ValueError("Text length must be 1–40 characters")
+    return (chars + 1) // 2
+
+
+def encode_string(text: str, chars: int, order: str = "ABCD") -> list[int]:
+    count = string_registers({"string_chars": chars})
+    raw = str(text or "").encode("ascii", "ignore")[: int(chars)]
+    raw = raw.ljust(count * 2, b"\x00")
+    return _from_bytes(raw, order)
+
+
+def decode_string(registers: list[int], chars: int, order: str = "ABCD") -> str:
+    count = string_registers({"string_chars": chars})
+    if len(registers) < count:
+        raise ValueError(f"Text needs {count} registers")
+    payload = _to_bytes([int(word) & 0xFFFF for word in registers[:count]], order)[: int(chars)]
+    text = payload.split(b"\x00", 1)[0].decode("ascii", "ignore").strip()
+    return text if text.isprintable() else ""
 
 
 def wire_address(function: str, number: int, addressing: str) -> int:
@@ -162,7 +185,7 @@ def encode_registers(value: int | float, dtype: str, order: str = "ABCD") -> lis
     return _from_bytes(payload, order)
 
 
-def engineering_from_raw(point: dict, raw: list) -> bool | float:
+def engineering_from_raw(point: dict, raw: list) -> bool | float | str:
     function = point["function"]
     if function in ("coil", "discrete"):
         if not raw:
@@ -178,6 +201,8 @@ def engineering_from_raw(point: dict, raw: list) -> bool | float:
         if point.get("invert"):
             value = not value
         return value
+    if dtype == "string":
+        return decode_string(raw, int(point.get("string_chars") or 16), point.get("byte_order") or "ABCD")
 
     number = decode_registers(raw, dtype, point.get("byte_order") or "ABCD")
     scale = float(point.get("scale", 1))
@@ -205,6 +230,9 @@ def wire_bool(point: dict, engineering: bool) -> bool:
 def format_value(point: dict, value) -> str:
     if value is None:
         return "—"
+    if point.get("dtype") == "string" or isinstance(value, str):
+        text = str(value).strip()
+        return text or "—"
     if isinstance(value, bool) or point["dtype"] == "bool" or point["function"] in ("coil", "discrete"):
         return str(point.get("on_label") or "On") if value else str(point.get("off_label") or "Off")
     decimals = int(point.get("decimals", 0))
@@ -221,6 +249,8 @@ def in_alarm(point: dict, value) -> bool:
     )
     if is_bool:
         return bool(value) if point.get("widget") == "alarm" else False
+    if point.get("dtype") == "string" or isinstance(value, str):
+        return False
     if point.get("alarm_high") is not None and float(value) > float(point["alarm_high"]):
         return True
     if point.get("alarm_low") is not None and float(value) < float(point["alarm_low"]):

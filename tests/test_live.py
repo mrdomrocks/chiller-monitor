@@ -23,6 +23,7 @@ def test_create_site_strips_password_and_rejects_bad_area():
     count = next(point for point in site["points"] if point["id"] == "compressor_count")
     assert count["writable"] is False
     assert site["bindings"]["comp_2_load"] == "comp_2_load"
+    assert site["bindings"]["chiller_name"] == "chiller_name"
     assert site["bindings"]["comp_6_run"] == "comp_6_run"
     with pytest.raises(ValueError):
         update_point(site["id"], "chw_supply", {**get_site(site["id"])["points"][0], "function": "coil", "address_number": 40001})

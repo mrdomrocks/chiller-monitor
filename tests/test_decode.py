@@ -5,13 +5,15 @@ import struct
 import pytest
 
 from app.blocks import plan_reads
+from app.blocks import span_for
 from app.decode import (
     decode_registers,
     encode_registers,
+    encode_string,
     engineering_from_raw,
     wire_address,
 )
-from app.template import default_points
+from app.template import default_bindings, default_points
 
 
 def test_modicon_and_protocol_addresses():
@@ -68,6 +70,23 @@ def test_read_plan_merges_status_word_and_keeps_coils_separate():
     coil = next(block for block in blocks if block.function == "coil")
     assert coil.address == 0
     assert coil.count == 1
+
+
+def test_chiller_name_is_text_and_blank_when_unprogrammed():
+    point = next(item for item in default_points() if item["id"] == "chiller_name")
+    assert point["dtype"] == "string"
+    assert point["widget"] == "hidden"
+    assert default_bindings()["chiller_name"] == "chiller_name"
+    assert span_for(point).count == 8
+    stored = {
+        "function": "holding",
+        "dtype": "string",
+        "byte_order": "ABCD",
+        "string_chars": 16,
+    }
+    assert engineering_from_raw(stored, encode_string("Plant 1", 16)) == "Plant 1"
+    assert engineering_from_raw(stored, [0] * 8) == ""
+    assert engineering_from_raw(stored, [0x2020] * 8) == ""
 
 
 def test_negative_int16_roundtrip():

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.decode import register_count, wire_address
+from app.decode import register_count, string_registers, wire_address
 
 
 @dataclass
@@ -27,6 +27,8 @@ def span_for(point: dict) -> Span:
     address = wire_address(point["function"], point["address_number"], point["addressing"])
     if point["function"] in ("coil", "discrete") or point["dtype"] == "bool":
         count = 1
+    elif point["dtype"] == "string":
+        count = string_registers(point)
     else:
         count = register_count(point["dtype"])
     return Span(point["id"], point["function"], address, count)

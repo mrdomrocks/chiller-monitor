@@ -133,6 +133,9 @@ def normalize_point(raw: dict, taken: set[str] | None = None) -> dict:
     decimals = int(raw.get("decimals", 0))
     if not 0 <= decimals <= 4:
         raise ValueError("Decimals must be 0–4")
+    string_chars = int(raw.get("string_chars") or 16)
+    if not 1 <= string_chars <= 40:
+        raise ValueError("Text length must be 1–40 characters")
     on_label = str(raw.get("on_label") or ("Alarm" if widget == "alarm" else "Running" if widget == "status" else "On"))
     off_label = str(raw.get("off_label") or ("Normal" if widget == "alarm" else "Stopped" if widget == "status" else "Off"))
     return {
@@ -149,6 +152,7 @@ def normalize_point(raw: dict, taken: set[str] | None = None) -> dict:
         "scale": scale,
         "offset": float(raw.get("offset", 0)),
         "decimals": decimals,
+        "string_chars": string_chars,
         "unit": str(raw.get("unit") or "")[:16],
         "widget": widget,
         "gauge_min": gauge_min,
@@ -277,15 +281,68 @@ def vpn_config_path(site: dict):
     return path
 
 
+def _name_address(site: dict) -> int:
+    used: set[int] = set()
+    widths = {"float64": 4, "float32": 2, "uint32": 2, "int32": 2, "string": 8}
+    for point in site["points"]:
+        if point.get("function") != "holding" or point.get("addressing", "modicon") != "modicon":
+            continue
+        start = int(point["address_number"])
+        for offset in range(widths.get(point.get("dtype"), 1)):
+            used.add(start + offset)
+    address = 40021
+    while any((address + offset) in used for offset in range(8)):
+        address += 1
+        if address > 49990:
+            return 40021
+    return address
+
+
+def _ensure_chiller_name(site: dict) -> bool:
+    """Give an older site a text point for the plant heading without replacing its map."""
+    changed = False
+    if not any(point["id"] == "chiller_name" for point in site["points"]):
+        site["points"].append(
+            normalize_point(
+                {
+                    "id": "chiller_name",
+                    "name": "Chiller name",
+                    "group": "Identity",
+                    "notes": "ASCII text, two characters per register. The plant heading uses this when it is not blank. An empty register shows as Chiller.",
+                    "address_number": _name_address(site),
+                    "dtype": "string",
+                    "string_chars": 16,
+                    "widget": "hidden",
+                    "sort": 400,
+                }
+            )
+        )
+        changed = True
+    stored = site.get("bindings") if isinstance(site.get("bindings"), dict) else {}
+    bindings = normalize_bindings(stored, site["points"])
+    if "chiller_name" not in stored and any(point["id"] == "chiller_name" for point in site["points"]):
+        bindings["chiller_name"] = "chiller_name"
+    if bindings != stored:
+        site["bindings"] = bindings
+        changed = True
+    return changed
+
+
 def list_sites() -> list[dict]:
     with _LOCK:
-        return [public_site(site) for site in _load()["sites"]]
+        data = _load()
+        if any(_ensure_chiller_name(site) for site in data["sites"]):
+            _save(data)
+        return [public_site(site) for site in data["sites"]]
 
 
 def get_site(site_id: str) -> dict:
     with _LOCK:
-        for site in _load()["sites"]:
+        data = _load()
+        for site in data["sites"]:
             if site["id"] == site_id:
+                if _ensure_chiller_name(site):
+                    _save(data)
                 return deepcopy(site)
     raise KeyError(site_id)
 

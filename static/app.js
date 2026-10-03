@@ -277,8 +277,8 @@ function renderPlant(main) {
     <div class="alarm-banner" id="alarmBanner" hidden></div>
     <div class="plant-head">
       <div>
-        <h1>${esc(site.name)}</h1>
-        <p>${esc(site.location || "Location not set")} · unit ${esc(site.unit_id)} · ${esc(site.modbus_host)}:${esc(site.modbus_port)}</p>
+        <h1 id="plantTitle">${esc(plantTitle())}</h1>
+        <p>${esc(site.name)} · ${esc(site.location || "Location not set")} · unit ${esc(site.unit_id)} · ${esc(site.modbus_host)}:${esc(site.modbus_port)}</p>
       </div>
       <div class="plant-tools">
         <p class="muted" id="commsDetail"></p>
@@ -294,6 +294,14 @@ function renderPlant(main) {
     ${outputs}
     ${profileHtml()}
     ${table}`;
+}
+
+function plantTitle() {
+  const point = bound("chiller_name");
+  if (!point || point.dtype !== "string") return "Chiller";
+  const reading = readingFor(point.id);
+  const text = reading && reading.quality === "good" ? String(reading.value ?? "").trim() : "";
+  return text || "Chiller";
 }
 
 function heroRolesShown() {
@@ -361,6 +369,7 @@ function outputsHtml() {
 function claimedPointIds() {
   const ids = new Set();
   const take = (point) => { if (point) ids.add(point.id); };
+  take(bound("chiller_name"));
   for (const role of heroRolesShown()) take(bound(role));
   if (layoutOn("mimic")) {
     if (loopShown("return_temp", "supply_temp")) {
@@ -499,6 +508,7 @@ function customiseBar(site) {
     </div>
     <div class="check-row">${sections}</div>
     <div class="bindings">
+      <label>Chiller name ${slotSelect("chiller_name")}</label>
       <label>Evaporator label <input data-label="evap_label" maxlength="40" value="${esc(site.evap_label || "Evaporator")}"></label>
       <label>Heat-rejection label <input data-label="cond_label" maxlength="40" value="${esc(site.cond_label || "Condenser")}"></label>
     </div>
@@ -523,7 +533,19 @@ function compressorSlots() {
 
 function slotSelect(roleId) {
   if (!S.customise) return "";
-  return `<select class="slot" data-binding="${esc(roleId)}">${pointOptions(S.site.bindings[roleId])}</select>`;
+  const options = roleId === "chiller_name"
+    ? textPointOptions(S.site.bindings[roleId])
+    : pointOptions(S.site.bindings[roleId]);
+  return `<select class="slot" data-binding="${esc(roleId)}">${options}</select>`;
+}
+
+function textPointOptions(selected) {
+  const options = [`<option value="">Not shown</option>`];
+  for (const point of S.site.points) {
+    if (point.dtype !== "string") continue;
+    options.push(`<option value="${esc(point.id)}"${point.id === selected ? " selected" : ""}>${esc(point.name)} · ${esc(addressLabel(point))}</option>`);
+  }
+  return options.join("");
 }
 
 function heroCard(roleId) {
@@ -715,6 +737,8 @@ function compressorSummary(view) {
 function paintLive() {
   paintHeader();
   paintCompressors();
+  const title = document.getElementById("plantTitle");
+  if (title && S.site) title.textContent = plantTitle();
   const flag = document.getElementById("demoFlag");
   if (flag) flag.hidden = !(S.live && S.live.demo && S.live.site_id === S.siteId);
   const detail = document.getElementById("commsDetail");
@@ -887,7 +911,7 @@ function pointButtons() {
 }
 
 function pointForm(point) {
-  const dtype = ["bool", "uint16", "int16", "uint32", "int32", "float32", "float64"];
+  const dtype = ["bool", "uint16", "int16", "uint32", "int32", "float32", "float64", "string"];
   const areas = [["holding", "Holding (4x)"], ["input", "Input (3x)"], ["coil", "Coil (0x)"], ["discrete", "Discrete (1x)"]];
   const orders = ["ABCD", "CDAB", "BADC", "DCBA"];
   const select = (name, options, current) => `<select name="${name}">${options.map(([value, label]) => `<option value="${esc(value)}"${value === current ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>`;
@@ -906,6 +930,7 @@ function pointForm(point) {
       <label>Scale ${num("scale", point.scale)}</label>
       <label>Offset ${num("offset", point.offset)}</label>
       <label>Decimals ${num("decimals", point.decimals, "1")}</label>
+      <label>Text length <input name="string_chars" type="number" min="1" max="40" step="1" value="${esc(point.string_chars ?? 16)}"></label>
       <label>Unit <input name="unit" maxlength="16" value="${esc(point.unit)}"></label>
       <label>Widget ${select("widget", WIDGETS, point.widget)}</label>
       <label>Gauge min ${num("gauge_min", point.gauge_min)}</label>
@@ -984,6 +1009,7 @@ function collectPoint(form) {
     scale: Number(value("scale")),
     offset: Number(value("offset")),
     decimals: Number(value("decimals")),
+    string_chars: Number(value("string_chars")),
     unit: value("unit"),
     widget: value("widget"),
     gauge_min: Number(value("gauge_min")),

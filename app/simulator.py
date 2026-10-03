@@ -7,7 +7,15 @@ import logging
 import math
 import time
 
-from app.decode import engineering_from_raw, encode_numeric, register_count, wire_address, wire_bool
+from app.decode import (
+    encode_numeric,
+    encode_string,
+    engineering_from_raw,
+    register_count,
+    string_registers,
+    wire_address,
+    wire_bool,
+)
 from app.modbus_tcp import ModbusDevice, serve_device
 from app.store import DEMO_ID, get_site
 from app.template import MAX_COMPRESSORS, default_points
@@ -83,6 +91,17 @@ def paint(device: ModbusDevice, points: list[dict], values: dict) -> None:
             if _grow(target, address, False):
                 target[address] = wire_bool(point, bool(values[point["id"]]))
             continue
+        if point["dtype"] == "string":
+            registers = device.inputs if point["function"] == "input" else device.holding
+            words = encode_string(
+                str(values[point["id"]]),
+                int(point.get("string_chars") or 16),
+                point.get("byte_order") or "ABCD",
+            )
+            for offset, word in enumerate(words):
+                if _grow(registers, address + offset, 0):
+                    registers[address + offset] = word
+            continue
         if point["dtype"] == "bool":
             flag = wire_bool(point, bool(values[point["id"]]))
             bit = 0 if point.get("bit") is None else int(point["bit"])
@@ -110,7 +129,12 @@ def read_engineering(device: ModbusDevice, point: dict, fallback):
             if address >= len(bits):
                 return fallback
             return engineering_from_raw(point, [bits[address]])
-        count = 1 if point["dtype"] == "bool" else register_count(point["dtype"])
+        if point["dtype"] == "bool":
+            count = 1
+        elif point["dtype"] == "string":
+            count = string_registers(point)
+        else:
+            count = register_count(point["dtype"])
         registers = device.inputs if point["function"] == "input" else device.holding
         if address < 0 or address + count > len(registers):
             return fallback

@@ -37,6 +37,8 @@ Close the program window to stop it. Choose **Demo chiller** to try the HMI with
 5. On **Connection**, choose **Start live HMI**. The plant page reads every enabled point on the register map over Modbus TCP and draws it from the live values. Points already placed on the water diagram, compressor cards, status lamps, or writable outputs stay there. Everything else — including a profile that does not use the chilled-water tiles — appears under **Register map**, grouped as it is on the map.
 6. Choose **Customise display** to show or hide the diagram, compressors, readings, status lamps, writable outputs, the register-map faceplate, and the live table. Pick the point for each diagram tile, the diagram labels, and whether a point is drawn as a value, gauge, status lamp, alarm, or hidden.
 
+The plant heading is the chiller name read from Modbus. A blank or missing name shows as Chiller. Match the text point’s address and length to the controller.
+
 The plant page reads the fitted-compressor register and shows that many circuits, each with its load percentage, up to six. A chiller that reports 2 shows two cards. A larger machine shows the extra compressors. Match **Fitted compressors**, each **Compressor N** load, and each run bit to the controller. On the demo chiller that count can be written, so both sizes can be checked.
 
 ## Tests

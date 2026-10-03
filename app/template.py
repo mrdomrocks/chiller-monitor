@@ -20,6 +20,7 @@ ROLES = [
     {"id": "cond_pump", "label": "Condenser pump", "kind": "bool", "section": "Status"},
     {"id": "alarm", "label": "General alarm", "kind": "bool", "section": "Status"},
     {"id": "compressor_count", "label": "Fitted compressors", "kind": "analog", "section": "Compressors"},
+    {"id": "chiller_name", "label": "Chiller name", "kind": "text", "section": "Plant"},
 ]
 ROLES.extend(
     {"id": f"comp_{index}_load", "label": f"Compressor {index} load", "kind": "analog", "section": "Compressors"}
@@ -270,6 +271,17 @@ def default_points() -> list[dict]:
                 sort=140,
             ),
             *_compressor_points(),
+            _point(
+                id="chiller_name",
+                name="Chiller name",
+                group="Identity",
+                notes="ASCII text, two characters per register. The plant heading uses this when it is not blank. An empty register shows as Chiller. Match the address and length to the controller.",
+                address_number=40021,
+                dtype="string",
+                string_chars=16,
+                widget="hidden",
+                sort=400,
+            ),
         ]
     )
 
@@ -337,6 +349,7 @@ def default_bindings() -> dict[str, str | None]:
         "cond_pump": "cond_pump",
         "alarm": "general_alarm",
         "compressor_count": "compressor_count",
+        "chiller_name": "chiller_name",
     }
     for index in range(1, MAX_COMPRESSORS + 1):
         bindings[f"comp_{index}_load"] = f"comp_{index}_load"
