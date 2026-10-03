@@ -30,7 +30,7 @@ cat > "$DEST/chiller-monitor" << EOF
 #!/bin/sh
 cd "$DEST"
 export CHILLER_INSTALLED=1
-export CHILLER_OPEN_BROWSER=1
+export CHILLER_WINDOW=1
 export PYTHONUTF8=1
 exec "$DEST/.venv/bin/python" -m app
 EOF
@@ -44,7 +44,8 @@ Type=Application
 Name=Chiller Monitor
 Comment=Local HMI for a chiller on Modbus TCP
 Exec=$DEST/chiller-monitor
-Terminal=true
+Terminal=false
+StartupNotify=true
 Categories=Utility;
 EOF
 

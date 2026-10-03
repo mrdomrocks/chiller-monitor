@@ -22,6 +22,14 @@ DEMO_ID = "demo"
 _LOCK = threading.Lock()
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 _WIDGETS = ("value", "gauge", "status", "alarm", "setpoint", "hidden")
+_LAYOUT = (
+    ("mimic", True),
+    ("compressors", True),
+    ("readings", True),
+    ("status", True),
+    ("outputs", True),
+    ("table", True),
+)
 
 
 def _load() -> dict:
@@ -158,6 +166,17 @@ def normalize_point(raw: dict, taken: set[str] | None = None) -> dict:
     }
 
 
+def normalize_layout(raw: dict | None, current: dict | None = None) -> dict[str, bool]:
+    merged = {key: default for key, default in _LAYOUT}
+    for source in (current, raw):
+        if not isinstance(source, dict):
+            continue
+        for key, _default in _LAYOUT:
+            if key in source:
+                merged[key] = bool(source[key])
+    return merged
+
+
 def normalize_bindings(bindings: dict | None, points: list[dict]) -> dict[str, str | None]:
     ids = {point["id"] for point in points}
     incoming = bindings or {}
@@ -220,6 +239,7 @@ def _new_site(name: str, site_id: str | None = None) -> dict:
         "id": site_id or uuid.uuid4().hex[:12],
         "points": points,
         "bindings": normalize_bindings(default_bindings(), points),
+        "layout": normalize_layout(None),
     }
     site.update(
         _connection_fields(
@@ -239,6 +259,7 @@ def public_site(site: dict) -> dict:
     data["vpn_password"] = ""
     data["vpn_config_ready"] = vpn_config_path(site) is not None
     data["points"] = sorted(data["points"], key=lambda point: (point["sort"], point["name"].lower()))
+    data["layout"] = normalize_layout(data.get("layout"))
     return data
 
 
@@ -424,6 +445,8 @@ def update_hmi(site_id: str, raw: dict) -> dict:
             site["evap_label"] = str(raw.get("evap_label") or "Evaporator")[:40]
         if "cond_label" in raw:
             site["cond_label"] = str(raw.get("cond_label") or "Condenser")[:40]
+        if "layout" in raw:
+            site["layout"] = normalize_layout(raw.get("layout"), site.get("layout"))
         _save(data)
         return public_site(site)
 
@@ -445,6 +468,8 @@ def replace_map(site_id: str, raw: dict) -> dict:
         site = _find(data, site_id)
         site["points"] = normalized
         site["bindings"] = normalize_bindings(raw.get("bindings", site.get("bindings")), normalized)
+        if "layout" in raw:
+            site["layout"] = normalize_layout(raw.get("layout"), site.get("layout"))
         _save(data)
         return public_site(site)
 
@@ -513,6 +538,7 @@ def export_map(site_id: str) -> dict:
         "cond_label": site["cond_label"],
         "points": site["points"],
         "bindings": site["bindings"],
+        "layout": normalize_layout(site.get("layout")),
     }
 
 

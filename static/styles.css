@@ -115,6 +115,24 @@ main { padding: 16px 20px 40px; }
 .welcome p { color: var(--muted); line-height: 1.5; }
 .welcome .actions { display: flex; gap: 8px; margin-top: 16px; }
 
+.plant-tools { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.customise {
+  background: #141c18;
+  border: 1px dashed var(--amber);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.customise summary { cursor: pointer; color: var(--amber); margin: 4px 0 10px; }
+.slot, .vessel input { width: 100%; margin-top: 8px; }
+.slot-grid { margin: 8px 0 12px; }
+body.customising .hero-card,
+body.customising .node,
+body.customising .readout,
+body.customising .vessel {
+  outline: 1px dashed var(--amber);
+  outline-offset: 2px;
+}
 .plant-head, .section-head, .toolbar, .split-head {
   display: flex;
   justify-content: space-between;
@@ -334,6 +352,7 @@ textarea { min-height: 72px; resize: vertical; }
   .pipe { display: none; }
   .top-actions { margin-left: 0; }
   .plant-head, .section-head { flex-direction: column; align-items: start; }
+  .plant-tools { align-items: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pipe { animation: none !important; }

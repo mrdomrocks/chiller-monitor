@@ -43,6 +43,30 @@ def test_http_creates_and_updates_a_point():
         assert renamed["write_max"] == 12
 
 
+def test_display_layout_is_saved_with_the_site():
+    from app.store import public_site, update_hmi
+
+    site = create_site("Layout")
+    assert site["layout"]["table"] is True
+    assert site["layout"]["compressors"] is True
+    saved = update_hmi(site["id"], {"layout": {"table": False}})
+    assert saved["layout"]["table"] is False
+    assert saved["layout"]["mimic"] is True
+    stored = get_site(site["id"])
+    assert stored["layout"]["table"] is False
+    cleaned = update_hmi(site["id"], {"layout": {"table": False, "extra": True}})
+    assert "extra" not in cleaned["layout"]
+    assert cleaned["layout"]["table"] is False
+
+    data = _load()
+    found = next(item for item in data["sites"] if item["id"] == site["id"])
+    del found["layout"]
+    _save(data)
+    published = public_site(get_site(site["id"]))
+    assert published["layout"]["status"] is True
+    assert published["layout"]["outputs"] is True
+
+
 def test_stage_loads_follows_fitted_count():
     two = stage_loads(2, 60, True)
     assert two[0] == (100.0, True)

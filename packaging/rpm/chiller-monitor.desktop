@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Chiller Monitor
+Comment=Local HMI for a chiller on Modbus TCP
+Exec=/usr/bin/chiller-monitor
+Terminal=false
+Categories=Utility;
+StartupNotify=true

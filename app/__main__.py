@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import socket
 import threading
 import webbrowser
 
@@ -11,19 +10,15 @@ import uvicorn
 
 from app.main import app
 from app.paths import data_dir
-
-URL = "http://127.0.0.1:8765"
-
-
-def _listening() -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(0.3)
-        return sock.connect_ex(("127.0.0.1", 8765)) == 0
+from app.window import URL, port_open, run_window
 
 
 def main() -> None:
+    if os.environ.get("CHILLER_WINDOW") == "1":
+        run_window(start_server=not port_open())
+        return
     open_browser = os.environ.get("CHILLER_OPEN_BROWSER") == "1"
-    if open_browser and _listening():
+    if open_browser and port_open():
         print(f"Chiller Monitor is already running at {URL}")
         webbrowser.open(URL)
         return

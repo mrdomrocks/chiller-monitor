@@ -6,6 +6,7 @@ const S = {
   live: null,
   view: "plant",
   pointId: null,
+  customise: false,
 };
 
 let shellReady = false;
@@ -15,6 +16,15 @@ let compressorKey = "";
 
 const FC = { coil: 1, discrete: 2, holding: 3, input: 4 };
 const BASE = { coil: 1, discrete: 10001, input: 30001, holding: 40001 };
+const WIDGETS = [["value", "Value"], ["gauge", "Gauge"], ["status", "Status lamp"], ["alarm", "Alarm"], ["setpoint", "Setpoint"], ["hidden", "Hidden"]];
+const LAYOUT = [
+  ["mimic", "Water diagram"],
+  ["compressors", "Compressors"],
+  ["readings", "Flow and pressure"],
+  ["status", "Status lamps"],
+  ["outputs", "Writable outputs"],
+  ["table", "Live values"],
+];
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -201,16 +211,18 @@ function paintHeader() {
 }
 
 function render() {
+  const drawOpen = Boolean(document.querySelector(".customise details[open]"));
   compressorKey = "";
   ensureShell();
   fillSiteSelect();
   paintHeader();
+  document.body.classList.toggle("customising", Boolean(S.customise && S.view === "plant" && S.site));
   const main = document.getElementById("main");
   if (!S.site) {
     main.innerHTML = `
       <section class="welcome">
         <h1>Watch a chiller through the RUT</h1>
-        <p>Join the chiller network on this laptop, then this page opens Modbus TCP to the controller. On site that is the RUT Wi-Fi. Away from site, use the laptop’s existing remote connection first. Addresses, scaling, and which values can be written are edited in the register map.</p>
+        <p>Join the chiller network on this laptop, then Chiller Monitor opens Modbus TCP to the controller. On site that is the RUT Wi-Fi. Away from site, use the laptop’s existing remote connection first. Customise display on the plant page chooses what the HMI shows. The register map holds addresses and scaling.</p>
         <div class="actions">
           <button class="primary" type="button" data-action="demo">Start the demo chiller</button>
           <button type="button" data-action="add-site">Create a site</button>
@@ -221,27 +233,25 @@ function render() {
   if (S.view === "map") renderMap(main);
   else if (S.view === "link") renderLink(main);
   else renderPlant(main);
+  if (drawOpen) {
+    const details = document.querySelector(".customise details");
+    if (details) details.open = true;
+  }
   paintLive();
+}
+
+function layoutOn(key) {
+  return S.site?.layout?.[key] !== false;
 }
 
 function renderPlant(main) {
   const site = S.site;
-  main.innerHTML = `
-    <p class="demo-flag" id="demoFlag" hidden>Demo controller on this computer. Supply temperature alarms above its high limit so the banner can be checked.</p>
-    <div class="alarm-banner" id="alarmBanner" hidden></div>
-    <div class="plant-head">
-      <div>
-        <h1>${esc(site.name)}</h1>
-        <p>${esc(site.location || "Location not set")} · unit ${esc(site.unit_id)} · ${esc(site.modbus_host)}:${esc(site.modbus_port)}</p>
-      </div>
-      <p class="muted" id="commsDetail"></p>
-    </div>
-    <section class="hero">${["supply_temp", "return_temp", "setpoint", "capacity"].map(heroCard).join("")}</section>
-    <section class="mimic" id="mimic">
-      ${loop("cold", "return_temp", site.evap_label || "Evaporator", "supply_temp")}
-      ${loop("hot", "condenser_in", site.cond_label || "Condenser", "condenser_out")}
-    </section>
-    <section class="compressor-bank">
+  const customise = S.customise ? customiseBar(site) : "";
+  const mimic = layoutOn("mimic") ? `<section class="mimic" id="mimic">
+      ${loop("cold", "return_temp", site.evap_label || "Evaporator", "evap_label", "supply_temp")}
+      ${loop("hot", "condenser_in", site.cond_label || "Condenser", "cond_label", "condenser_out")}
+    </section>` : "";
+  const compressors = layoutOn("compressors") ? `<section class="compressor-bank">
       <div class="section-head">
         <div>
           <h2>Compressors</h2>
@@ -252,43 +262,113 @@ function renderPlant(main) {
           ${compressorIndexes().map((n) => `<button type="button" data-action="write-count" data-count="${n}" data-requires-connection aria-label="Show ${n} compressors">${n}</button>`).join("")}
         </div>
       </div>
+      ${S.customise ? compressorSlots() : ""}
       <div class="compressors" id="compressorGrid"></div>
-    </section>
-    <section class="side-reads">
+    </section>` : "";
+  const readings = layoutOn("readings") ? `<section class="side-reads">
       ${readout("flow")}
       ${readout("pressure")}
-    </section>
-    <h2 class="kicker" style="margin:6px 0">Status</h2>
-    <section class="lamps" id="lamps">${lampCards()}</section>
-    <h2 class="kicker" style="margin:6px 0">Writable outputs</h2>
-    <section class="controls" id="controls">${controlCards()}</section>
-    <div class="table-wrap">
+    </section>` : "";
+  const status = layoutOn("status") ? `<h2 class="kicker" style="margin:6px 0">Status</h2>
+    <section class="lamps" id="lamps">${lampCards()}</section>` : "";
+  const outputs = layoutOn("outputs") ? `<h2 class="kicker" style="margin:6px 0">Writable outputs</h2>
+    <section class="controls" id="controls">${controlCards()}</section>` : "";
+  const table = layoutOn("table") ? `<div class="table-wrap">
       <table>
         <thead><tr><th>Point</th><th>Value</th><th>Raw</th><th>Quality</th></tr></thead>
         <tbody>${tableRows()}</tbody>
       </table>
-    </div>`;
+    </div>` : "";
+  main.innerHTML = `
+    <p class="demo-flag" id="demoFlag" hidden>Demo controller on this computer. Supply temperature alarms above its high limit so the banner can be checked.</p>
+    <div class="alarm-banner" id="alarmBanner" hidden></div>
+    <div class="plant-head">
+      <div>
+        <h1>${esc(site.name)}</h1>
+        <p>${esc(site.location || "Location not set")} · unit ${esc(site.unit_id)} · ${esc(site.modbus_host)}:${esc(site.modbus_port)}</p>
+      </div>
+      <div class="plant-tools">
+        <p class="muted" id="commsDetail"></p>
+        ${S.customise ? "" : `<button type="button" data-action="customise">Customise display</button>`}
+      </div>
+    </div>
+    ${customise}
+    <section class="hero">${["supply_temp", "return_temp", "setpoint", "capacity"].map(heroCard).join("")}</section>
+    ${mimic}
+    ${compressors}
+    ${readings}
+    ${status}
+    ${outputs}
+    ${table}`;
+}
+
+function customiseBar(site) {
+  const sections = LAYOUT.map(([key, label]) => `
+    <label class="inline"><input type="checkbox" data-layout="${key}"${layoutOn(key) ? " checked" : ""}> ${esc(label)}</label>`).join("");
+  const drawn = site.points.filter((point) => point.enabled).map((point) => `
+    <label>${esc(point.name)}
+      <select data-widget="${esc(point.id)}">${WIDGETS.map(([value, label]) => `<option value="${esc(value)}"${point.widget === value ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>
+    </label>`).join("");
+  return `<section class="customise">
+    <div class="section-head">
+      <div>
+        <h2>Display</h2>
+        <p class="muted">Choose which parts of this plant page are shown, which point fills each tile, and how that point is drawn. Addresses and scaling stay on the register map. Changes are saved with this site.</p>
+      </div>
+      <button type="button" class="primary" data-action="customise-done">Done</button>
+    </div>
+    <div class="check-row">${sections}</div>
+    <div class="bindings">
+      <label>Evaporator label <input data-label="evap_label" maxlength="40" value="${esc(site.evap_label || "Evaporator")}"></label>
+      <label>Heat-rejection label <input data-label="cond_label" maxlength="40" value="${esc(site.cond_label || "Condenser")}"></label>
+    </div>
+    <details>
+      <summary>How each point is drawn</summary>
+      <div class="bindings">${drawn}</div>
+    </details>
+  </section>`;
+}
+
+function compressorSlots() {
+  const roles = [
+    ["compressor_count", "Fitted compressors"],
+    ...compressorIndexes().flatMap((index) => [
+      [`comp_${index}_load`, `Compressor ${index} load`],
+      [`comp_${index}_run`, `Compressor ${index} run`],
+    ]),
+  ];
+  return `<div class="bindings slot-grid">${roles.map(([role, label]) => `
+    <label>${esc(label)} ${slotSelect(role)}</label>`).join("")}</div>`;
+}
+
+function slotSelect(roleId) {
+  if (!S.customise) return "";
+  return `<select class="slot" data-binding="${esc(roleId)}">${pointOptions(S.site.bindings[roleId])}</select>`;
 }
 
 function heroCard(roleId) {
   const meta = S.meta.roles.find((role) => role.id === roleId);
   const point = bound(roleId);
   if (!point) {
-    return `<article class="hero-card missing"><span class="kicker">${esc(meta.label)}</span><b>Not assigned</b></article>`;
+    return `<article class="hero-card missing"><span class="kicker">${esc(meta.label)}</span><b>Not assigned</b>${slotSelect(roleId)}</article>`;
   }
   return `<article class="hero-card" data-card="${esc(point.id)}">
     <span class="kicker">${esc(point.name)}</span>
     <div class="figure"><b data-value="${esc(point.id)}">—</b><small>${esc(point.unit)}</small></div>
     <div class="bar"><span data-bar="${esc(point.id)}"></span></div>
     <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true"><polyline data-spark="${esc(point.id)}" points=""></polyline></svg>
+    ${slotSelect(roleId)}
   </article>`;
 }
 
-function loop(kind, inletRole, vessel, outletRole) {
+function loop(kind, inletRole, vessel, labelField, outletRole) {
+  const name = S.customise
+    ? `<input data-label="${esc(labelField)}" maxlength="40" value="${esc(vessel)}" aria-label="${esc(vessel)} label">`
+    : `<strong>${esc(vessel)}</strong>`;
   return `<div class="loop ${kind}">
     ${node(inletRole)}
     <div class="pipe"></div>
-    <div class="vessel"><strong>${esc(vessel)}</strong></div>
+    <div class="vessel">${name}</div>
     <div class="pipe"></div>
     ${node(outletRole)}
   </div>`;
@@ -297,21 +377,23 @@ function loop(kind, inletRole, vessel, outletRole) {
 function node(roleId) {
   const meta = S.meta.roles.find((role) => role.id === roleId);
   const point = bound(roleId);
-  if (!point) return `<div class="node"><span class="kicker">${esc(meta.label)}</span><b>—</b></div>`;
+  if (!point) return `<div class="node"><span class="kicker">${esc(meta.label)}</span><b>—</b>${slotSelect(roleId)}</div>`;
   return `<div class="node" data-card="${esc(point.id)}">
     <span class="kicker">${esc(point.name)}</span>
     <b data-value="${esc(point.id)}">—</b>
     <small>${esc(point.unit)}</small>
+    ${slotSelect(roleId)}
   </div>`;
 }
 
 function readout(roleId) {
   const meta = S.meta.roles.find((role) => role.id === roleId);
   const point = bound(roleId);
-  if (!point) return `<article class="readout"><span class="kicker">${esc(meta.label)}</span><b>—</b></article>`;
+  if (!point) return `<article class="readout"><span class="kicker">${esc(meta.label)}</span><b>—</b>${slotSelect(roleId)}</article>`;
   return `<article class="readout" data-card="${esc(point.id)}">
     <span class="kicker">${esc(point.name)}</span>
     <div class="figure"><b data-value="${esc(point.id)}">—</b><small>${esc(point.unit)}</small></div>
+    ${slotSelect(roleId)}
   </article>`;
 }
 
@@ -574,18 +656,7 @@ function renderMap(main) {
   if (!S.pointId || !pointById(S.pointId)) S.pointId = site.points[0]?.id || null;
   const point = pointById(S.pointId);
   main.innerHTML = `
-    <section class="panel">
-      <div class="section-head"><h2>Plant display</h2></div>
-      <p class="help">Bind each slot on the plant page to a point. Renaming the point changes the label the operator sees. Vessel names are for the diagram only. Compressor cards follow the fitted-compressors register: a machine that reports 2 shows two loads, and a larger machine shows the extra circuits, up to six.</p>
-      <form id="hmiForm">
-        <div class="bindings">
-          <label>Evaporator label <input name="evap_label" value="${esc(site.evap_label)}"></label>
-          <label>Heat-rejection label <input name="cond_label" value="${esc(site.cond_label)}"></label>
-        </div>
-        ${bindingSections(site)}
-        <button class="primary" type="submit">Save labels</button>
-      </form>
-    </section>
+    <p class="help">Match each point to the controller manual. On the plant page, Customise display chooses which of these points fill the HMI and how they are drawn.</p>
     <div class="toolbar">
       <input id="pointSearch" type="search" placeholder="Filter points">
       <div class="actions">
@@ -602,27 +673,6 @@ function renderMap(main) {
   wireHint();
 }
 
-function bindingSections(site) {
-  const sections = [];
-  for (const role of S.meta.roles) {
-    const name = role.section || "Plant";
-    let section = sections.find((item) => item.name === name);
-    if (!section) {
-      section = { name, roles: [] };
-      sections.push(section);
-    }
-    section.roles.push(role);
-  }
-  return sections.map((section) => `
-    <fieldset class="bind-section">
-      <legend>${esc(section.name)}</legend>
-      <div class="bindings">
-        ${section.roles.map((role) => `<label>${esc(role.label)}
-          <select data-binding="${esc(role.id)}">${pointOptions(site.bindings[role.id])}</select>
-        </label>`).join("")}
-      </div>
-    </fieldset>`).join("");
-}
 
 function pointOptions(selected) {
   const options = [`<option value="">Not shown</option>`];
@@ -643,7 +693,6 @@ function pointButtons() {
 function pointForm(point) {
   const dtype = ["bool", "uint16", "int16", "uint32", "int32", "float32", "float64"];
   const areas = [["holding", "Holding (4x)"], ["input", "Input (3x)"], ["coil", "Coil (0x)"], ["discrete", "Discrete (1x)"]];
-  const widgets = [["value", "Value"], ["gauge", "Gauge"], ["status", "Status lamp"], ["alarm", "Alarm"], ["setpoint", "Setpoint"], ["hidden", "Hidden"]];
   const orders = ["ABCD", "CDAB", "BADC", "DCBA"];
   const select = (name, options, current) => `<select name="${name}">${options.map(([value, label]) => `<option value="${esc(value)}"${value === current ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>`;
   const num = (name, value, step = "any") => `<input name="${name}" type="number" step="${step}" value="${value ?? ""}">`;
@@ -662,7 +711,7 @@ function pointForm(point) {
       <label>Offset ${num("offset", point.offset)}</label>
       <label>Decimals ${num("decimals", point.decimals, "1")}</label>
       <label>Unit <input name="unit" maxlength="16" value="${esc(point.unit)}"></label>
-      <label>Widget ${select("widget", widgets, point.widget)}</label>
+      <label>Widget ${select("widget", WIDGETS, point.widget)}</label>
       <label>Gauge min ${num("gauge_min", point.gauge_min)}</label>
       <label>Gauge max ${num("gauge_max", point.gauge_max)}</label>
       <label>Alarm low <input name="alarm_low" type="number" step="any" value="${point.alarm_low ?? ""}"></label>
@@ -840,6 +889,17 @@ async function onClick(event) {
     render();
     return;
   }
+  if (action === "customise") {
+    S.customise = true;
+    S.view = "plant";
+    render();
+    return;
+  }
+  if (action === "customise-done") {
+    S.customise = false;
+    render();
+    return;
+  }
   if (action === "toggle-connect") {
     await guard(async () => {
       if (!S.site) return;
@@ -994,19 +1054,6 @@ async function onSubmit(event) {
       render();
       toast("Point saved", true);
     });
-  } else if (form.id === "hmiForm") {
-    event.preventDefault();
-    await guard(async () => {
-      S.site = await api(`/api/sites/${S.site.id}/hmi`, {
-        method: "PUT",
-        body: {
-          bindings: S.site.bindings,
-          evap_label: form.elements.evap_label.value,
-          cond_label: form.elements.cond_label.value,
-        },
-      });
-      toast("Display saved", true);
-    });
   } else if (form.dataset.writePoint) {
     event.preventDefault();
     const point = pointById(form.dataset.writePoint);
@@ -1033,9 +1080,51 @@ async function onChange(event) {
   if (target.id === "siteSelect") {
     S.siteId = target.value || null;
     S.pointId = null;
+    S.customise = false;
     if (S.siteId) S.site = await api(`/api/sites/${S.siteId}`);
     else S.site = null;
     render();
+    return;
+  }
+  if (target.dataset.layout && S.site) {
+    S.site.layout = { ...(S.site.layout || {}), [target.dataset.layout]: target.checked };
+    try {
+      S.site = await api(`/api/sites/${S.site.id}/hmi`, {
+        method: "PUT",
+        body: { layout: S.site.layout },
+      });
+      render();
+    } catch (error) {
+      toast(error.message);
+    }
+    return;
+  }
+  if (target.dataset.label && S.site) {
+    try {
+      S.site = await api(`/api/sites/${S.site.id}/hmi`, {
+        method: "PUT",
+        body: { [target.dataset.label]: target.value },
+      });
+      render();
+      toast("Display saved", true);
+    } catch (error) {
+      toast(error.message);
+    }
+    return;
+  }
+  if (target.dataset.widget && S.site) {
+    const point = pointById(target.dataset.widget);
+    if (!point) return;
+    try {
+      S.site = await api(`/api/sites/${S.site.id}/points/${point.id}`, {
+        method: "PUT",
+        body: { ...point, widget: target.value },
+      });
+      render();
+      toast("Display saved", true);
+    } catch (error) {
+      toast(error.message);
+    }
     return;
   }
   if (target.dataset.binding && S.site) {
@@ -1045,7 +1134,8 @@ async function onChange(event) {
         method: "PUT",
         body: { bindings: S.site.bindings },
       });
-      toast("Binding saved", true);
+      render();
+      toast("Display saved", true);
     } catch (error) {
       toast(error.message);
     }
