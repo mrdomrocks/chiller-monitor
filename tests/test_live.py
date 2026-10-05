@@ -311,6 +311,12 @@ async def sized_demo_session():
                 assert values["comp_1_running"]["value"] is True
                 assert values["fan_output"]["value"] == 7
                 assert values["comp_1_suction_pressure"]["value"] == 45
+                assert values["comp_1_discharge_pressure"]["value"] == 180
+                assert values["press_2_cool_inlet_nor"]["value"] == 24
+                assert values["general_alarm"]["value"] is True
+                assert values["alarm_message1"]["value"] is True
+                assert values["alarm_message_9"]["value"] == 12
+                assert values["pump_running"]["value"] is True
                 name = values.get("chiller_name")
                 assert name["quality"] == "good"
                 assert name["value"] == "1 compressor"

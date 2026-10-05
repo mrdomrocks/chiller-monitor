@@ -38,6 +38,7 @@ _LOCK = threading.Lock()
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 _WIDGETS = ("value", "gauge", "status", "alarm", "setpoint", "hidden")
 _LAYOUT = (
+    ("faceplate", True),
     ("mimic", True),
     ("compressors", True),
     ("readings", True),
@@ -419,6 +420,8 @@ def list_sites() -> list[dict]:
             before = _setpoint_layout(site)
             _upgrade_stock_float_setpoint(site)
             changed = changed or _setpoint_layout(site) != before
+        for site in data["sites"]:
+            changed = _bind_sheet_faceplate(site) or changed
         if changed or any(_ensure_chiller_name(site) for site in data["sites"]):
             _save(data)
         return [public_site(site) for site in data["sites"]]
@@ -429,7 +432,9 @@ def get_site(site_id: str) -> dict:
         data = _load()
         for site in data["sites"]:
             if site["id"] == site_id:
-                if _ensure_chiller_name(site):
+                changed = _ensure_chiller_name(site)
+                changed = _bind_sheet_faceplate(site) or changed
+                if changed:
                     _save(data)
                 return deepcopy(site)
     raise KeyError(site_id)
@@ -636,8 +641,35 @@ def one_compressor_document() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+_SHEET_FACEPLATE = (
+    ("high_pressure", "comp_1_discharge_pressure"),
+    ("low_pressure", "comp_1_suction_pressure"),
+    ("pump_pressure", "press_2_cool_inlet_nor"),
+)
+
+
 def _point_ids(site: dict) -> set[str]:
     return {point.get("id") for point in site.get("points") or []}
+
+
+def _bind_sheet_faceplate(site: dict) -> bool:
+    """Fill empty chiller-display slots on a map that already has the controller sheet.
+
+    Only a missing key is filled. A slot saved as not shown stays empty.
+    """
+    ids = _point_ids(site)
+    if "water_outlet" not in ids:
+        return False
+    bindings = site.get("bindings")
+    if not isinstance(bindings, dict):
+        bindings = {}
+        site["bindings"] = bindings
+    changed = False
+    for role, point_id in _SHEET_FACEPLATE:
+        if role not in bindings and point_id in ids:
+            bindings[role] = point_id
+            changed = True
+    return changed
 
 
 def _starter_map(site: dict) -> bool:
@@ -772,6 +804,7 @@ def ensure_sized_demo(count: int, port: int) -> dict:
         elif "water_outlet" not in _point_ids(found):
             _fill_missing_template(found)
             _upgrade_stock_float_setpoint(found)
+        _bind_sheet_faceplate(found)
         _lock_fitted_count(found)
         _save(data)
         return deepcopy(found)

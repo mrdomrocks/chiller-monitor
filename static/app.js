@@ -18,6 +18,7 @@ const FC = { coil: 1, discrete: 2, holding: 3, input: 4 };
 const BASE = { coil: 1, discrete: 10001, input: 30001, holding: 40001 };
 const WIDGETS = [["value", "Value"], ["gauge", "Gauge"], ["status", "Status lamp"], ["alarm", "Alarm"], ["setpoint", "Setpoint"], ["hidden", "Hidden"]];
 const LAYOUT = [
+  ["faceplate", "Chiller display"],
   ["mimic", "Water diagram"],
   ["compressors", "Compressors"],
   ["readings", "Flow and pressure"],
@@ -310,6 +311,7 @@ function renderPlant(main) {
       </div>
     </div>
     ${customise}
+    ${layoutOn("faceplate") ? faceplateHtml() : ""}
     ${heroHtml()}
     ${mimic}
     ${compressors}
@@ -329,7 +331,9 @@ function plantTitle() {
 }
 
 function heroRolesShown() {
-  const roles = ["supply_temp", "return_temp", "setpoint", "capacity"];
+  const roles = layoutOn("faceplate")
+    ? ["setpoint"]
+    : ["supply_temp", "return_temp", "setpoint", "capacity"];
   if (S.customise) return roles;
   return roles.filter((role) => bound(role));
 }
@@ -338,6 +342,156 @@ function heroHtml() {
   const roles = heroRolesShown();
   if (!roles.length) return "";
   return `<section class="hero">${roles.map(heroCard).join("")}</section>`;
+}
+
+function loadPoint() {
+  return bound("capacity") || bound("comp_1_load");
+}
+
+function faultPoints() {
+  return (S.site?.points || [])
+    .filter((point) => point.enabled && /^alarm_message/.test(point.id))
+    .sort((a, b) => a.address_number - b.address_number || a.sort - b.sort);
+}
+
+function faultTripped(point, reading) {
+  if (!point || !reading || reading.quality !== "good") return false;
+  if (point.dtype === "bool" || point.function === "coil" || point.function === "discrete" || typeof reading.value === "boolean") {
+    return Boolean(reading.value);
+  }
+  if (typeof reading.value === "number") return reading.value !== 0;
+  if (typeof reading.value === "string") return reading.value.trim() !== "";
+  return false;
+}
+
+function analogTile(roleId, title) {
+  const point = bound(roleId);
+  if (!point) {
+    return `<article class="face-tile missing">
+      <span class="kicker">${esc(title)}</span>
+      <b>Not assigned</b>
+      ${slotSelect(roleId)}
+    </article>`;
+  }
+  const numeric = point.dtype !== "bool" && point.function !== "coil" && point.function !== "discrete";
+  return `<article class="face-tile" data-card="${esc(point.id)}">
+    <span class="kicker">${esc(title)}</span>
+    <span class="face-point">${esc(point.name)}</span>
+    <div class="figure"><b data-value="${esc(point.id)}">—</b><small>${esc(point.unit)}</small></div>
+    ${numeric ? `<div class="bar"><span data-bar="${esc(point.id)}"></span></div>` : ""}
+    ${slotSelect(roleId)}
+  </article>`;
+}
+
+function loadTile() {
+  const point = loadPoint();
+  const slots = `${slotSelect("capacity")}${slotSelect("comp_1_load")}`;
+  if (!point) {
+    return `<article class="face-tile missing">
+      <span class="kicker">Compressor</span>
+      <b>Not assigned</b>
+      <p class="muted">Operational percentage. Assign the load register for this controller.</p>
+      ${slots}
+    </article>`;
+  }
+  return `<article class="face-tile" data-card="${esc(point.id)}">
+    <span class="kicker">Compressor</span>
+    <span class="face-point">${esc(point.name)} · operational %</span>
+    <div class="figure"><b data-value="${esc(point.id)}">—</b><small>${esc(point.unit || "%")}</small></div>
+    <div class="bar"><span data-bar="${esc(point.id)}"></span></div>
+    ${slots}
+  </article>`;
+}
+
+function runTile(roleId, title) {
+  const point = bound(roleId);
+  if (!point) {
+    return `<article class="face-tile missing">
+      <span class="kicker">${esc(title)}</span>
+      <b>Not assigned</b>
+      ${slotSelect(roleId)}
+    </article>`;
+  }
+  return `<article class="face-tile lamp-card" data-lamp="${esc(point.id)}">
+    <span class="lamp"></span>
+    <div>
+      <span class="kicker">${esc(title)}</span>
+      <span class="face-point">${esc(point.name)}</span>
+      <strong data-value="${esc(point.id)}">—</strong>
+      ${slotSelect(roleId)}
+    </div>
+  </article>`;
+}
+
+function alarmFace() {
+  const point = bound("alarm");
+  const lamp = point
+    ? `<article class="face-alarm-lamp lamp-card" data-lamp="${esc(point.id)}">
+        <span class="lamp"></span>
+        <div>
+          <span class="kicker">Alarm</span>
+          <span class="face-point">${esc(point.name)}</span>
+          <strong data-value="${esc(point.id)}">—</strong>
+          ${slotSelect("alarm")}
+        </div>
+      </article>`
+    : `<article class="face-alarm-lamp missing">
+        <span class="kicker">Alarm</span>
+        <b>Not assigned</b>
+        ${slotSelect("alarm")}
+      </article>`;
+  const faults = faultPoints().map((fault) => `
+    <li data-fault="${esc(fault.id)}" hidden>
+      <strong>${esc(fault.name)}</strong>
+      <span data-value="${esc(fault.id)}">—</span>
+      <small>${esc(addressLabel(fault))}</small>
+      <small>Register <span data-raw="${esc(fault.id)}">—</span></small>
+    </li>`).join("");
+  return `<div class="face-alarm">
+    ${lamp}
+    <div class="fault-box" id="faultBox">
+      <span class="kicker">Fault from the controller</span>
+      <p class="fault-clear" id="faultClear">No fault from the controller.</p>
+      <ul class="fault-list">${faults}</ul>
+    </div>
+  </div>`;
+}
+
+function faceplateHtml() {
+  return `<section class="faceplate" id="faceplate">
+    <div class="section-head">
+      <div>
+        <h2>Chiller display</h2>
+        <p class="muted">Outlet and inlet temperatures (flow and return), compressor load, high and low pressure, and the pump.</p>
+      </div>
+    </div>
+    <div class="face-grid">
+      ${analogTile("supply_temp", "Flow · outlet")}
+      ${analogTile("return_temp", "Return · inlet")}
+      ${loadTile()}
+      ${runTile("evap_pump", "Pump")}
+      ${analogTile("high_pressure", "High pressure")}
+      ${analogTile("low_pressure", "Low pressure")}
+      ${analogTile("pump_pressure", "Pump pressure")}
+    </div>
+    ${alarmFace()}
+  </section>`;
+}
+
+function faceplateOwnedIds() {
+  if (!layoutOn("faceplate")) return new Set();
+  const ids = new Set();
+  const take = (point) => { if (point) ids.add(point.id); };
+  take(bound("supply_temp"));
+  take(bound("return_temp"));
+  take(loadPoint());
+  take(bound("evap_pump"));
+  take(bound("high_pressure"));
+  take(bound("low_pressure"));
+  take(bound("pump_pressure"));
+  take(bound("alarm"));
+  for (const point of faultPoints()) ids.add(point.id);
+  return ids;
 }
 
 function loopShown(inletRole, outletRole) {
@@ -391,7 +545,7 @@ function outputsHtml() {
 }
 
 function claimedPointIds() {
-  const ids = new Set();
+  const ids = faceplateOwnedIds();
   const take = (point) => { if (point) ids.add(point.id); };
   take(bound("chiller_name"));
   for (const role of heroRolesShown()) take(bound(role));
@@ -624,7 +778,8 @@ function visiblePoints() {
 }
 
 function lampCards() {
-  const points = visiblePoints().filter((point) => point.widget === "status" || point.widget === "alarm");
+  const owned = faceplateOwnedIds();
+  const points = visiblePoints().filter((point) => (point.widget === "status" || point.widget === "alarm") && !owned.has(point.id));
   if (!points.length) return "";
   return points.map((point) => `
     <article class="lamp-card" data-lamp="${esc(point.id)}">
@@ -794,7 +949,9 @@ function paintLive() {
       if (sized) {
         const count = Number(sized[1]);
         const noun = count === 1 ? "compressor" : "compressors";
-        flag.textContent = `Demo controller with ${count} ${noun}. The plant shows that many compressor cards.`;
+        flag.textContent = count === 1
+          ? "Demo controller with 1 compressor. A fault is held on so the alarm box shows the registers the controller outputs."
+          : `Demo controller with ${count} ${noun}. The plant shows that many compressor cards.`;
       } else {
         flag.textContent = "Demo controller on this computer. Supply temperature alarms above its high limit so the banner can be checked.";
       }
@@ -833,6 +990,27 @@ function paintLive() {
     });
     banner.hidden = alarms.length === 0;
     banner.textContent = alarms.length ? `Alarm · ${alarms.map((point) => point.name).join(", ")}` : "";
+  }
+  document.querySelectorAll("[data-fault]").forEach((el) => {
+    const point = pointById(el.dataset.fault);
+    el.hidden = !faultTripped(point, readingFor(el.dataset.fault));
+  });
+  const faultBox = document.getElementById("faultBox");
+  const faultClear = document.getElementById("faultClear");
+  if (faultBox && faultClear && S.site) {
+    const tripped = faultBox.querySelector("[data-fault]:not([hidden])");
+    const alarmPoint = bound("alarm");
+    const alarmReading = alarmPoint ? readingFor(alarmPoint.id) : null;
+    const alarmOn = Boolean(alarmReading && alarmReading.quality === "good" && alarmReading.value);
+    faultBox.classList.toggle("tripped", Boolean(tripped) || alarmOn);
+    faultClear.hidden = Boolean(tripped);
+    if (!S.live || S.live.site_id !== S.siteId) {
+      faultClear.textContent = "Connect to read fault registers from the controller.";
+    } else if (alarmOn) {
+      faultClear.textContent = "Alarm is on. The controller has not output a fault.";
+    } else {
+      faultClear.textContent = "No fault from the controller.";
+    }
   }
   if (!S.site) return;
   document.querySelectorAll("[data-value]").forEach((el) => {

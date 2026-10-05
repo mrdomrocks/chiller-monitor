@@ -2309,6 +2309,9 @@
     "condenser_out": null,
     "flow": null,
     "pressure": null,
+    "high_pressure": "comp_1_discharge_pressure",
+    "low_pressure": "comp_1_suction_pressure",
+    "pump_pressure": "press_2_cool_inlet_nor",
     "compressor": "comp_1_running",
     "evap_pump": "pump_running",
     "alarm": "general_alarm",
@@ -2328,6 +2331,7 @@
     "comp_6_run": null
   },
   "layout": {
+    "faceplate": true,
     "mimic": true,
     "compressors": true,
     "readings": false,
