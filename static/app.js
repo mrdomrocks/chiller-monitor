@@ -177,7 +177,9 @@ function siteListRank(site) {
 function fillSiteSelect() {
   const select = document.getElementById("siteSelect");
   select.replaceChildren();
-  const sites = [...S.sites].sort((a, b) => siteListRank(a) - siteListRank(b) || a.name.localeCompare(b.name));
+  const sites = [...S.sites]
+    .filter((site) => site.id !== "demo")
+    .sort((a, b) => siteListRank(a) - siteListRank(b) || a.name.localeCompare(b.name));
   if (!sites.length) {
     const option = document.createElement("option");
     option.value = "";
@@ -1425,9 +1427,23 @@ async function onChange(event) {
     return;
   }
   if (target.id === "siteSelect") {
-    S.siteId = target.value || null;
+    const next = target.value || null;
+    const sized = /^demo-(\d+)$/.exec(next || "");
     S.pointId = null;
     S.customise = false;
+    if (sized && !(S.live?.simulator_running && S.live.site_id === next)) {
+      await guard(async () => {
+        S.live = await api(`/api/demo/compressors/${sized[1]}`, { method: "POST" });
+        await refreshSites(next);
+        S.view = "plant";
+        render();
+        const count = Number(sized[1]);
+        const noun = count === 1 ? "compressor" : "compressors";
+        toast(`Demo with ${count} ${noun} is running`, true);
+      });
+      return;
+    }
+    S.siteId = next;
     if (S.siteId) S.site = await api(`/api/sites/${S.siteId}`);
     else S.site = null;
     render();

@@ -351,10 +351,47 @@ def _ensure_chiller_name(site: dict) -> bool:
     return changed
 
 
+def _lock_fitted_count(site: dict) -> None:
+    for point in site["points"]:
+        if point["id"] == "compressor_count":
+            point["writable"] = False
+            point["write_min"] = None
+            point["write_max"] = None
+            point["widget"] = "hidden"
+
+
+def _ensure_demo_catalog(data: dict) -> bool:
+    """Keep the one, two, four, and six compressor demos in the site list."""
+    changed = False
+    for count in DEMO_SIZES:
+        site_id = sized_demo_id(count)
+        if any(site["id"] == site_id for site in data["sites"]):
+            continue
+        found = _new_site(_DEMO_NAMES[count], site_id)
+        found["location"] = "This computer"
+        noun = "compressor" if count == 1 else "compressors"
+        found["notes"] = (
+            f"Simulated chiller with {count} {noun}. "
+            "The fitted-compressor register stays at that count, so the plant page shows that many cards."
+        )
+        found["modbus_host"] = "127.0.0.1"
+        found["modbus_port"] = 1502
+        found["poll_ms"] = 500
+        found["protocol"] = "tcp"
+        found["inter_frame_ms"] = 0
+        found["vpn_mode"] = "none"
+        _fill_missing_template(found)
+        _lock_fitted_count(found)
+        data["sites"].insert(0, found)
+        changed = True
+    return changed
+
+
 def list_sites() -> list[dict]:
     with _LOCK:
         data = _load()
-        if any(_ensure_chiller_name(site) for site in data["sites"]):
+        changed = _ensure_demo_catalog(data)
+        if changed or any(_ensure_chiller_name(site) for site in data["sites"]):
             _save(data)
         return [public_site(site) for site in data["sites"]]
 
@@ -605,14 +642,11 @@ def ensure_sized_demo(count: int, port: int) -> dict:
         found["modbus_host"] = "127.0.0.1"
         found["modbus_port"] = int(port)
         found["poll_ms"] = 500
+        found["protocol"] = "tcp"
+        found["inter_frame_ms"] = 0
         found["vpn_mode"] = "none"
         _fill_missing_template(found)
-        for point in found["points"]:
-            if point["id"] == "compressor_count":
-                point["writable"] = False
-                point["write_min"] = None
-                point["write_max"] = None
-                point["widget"] = "hidden"
+        _lock_fitted_count(found)
         _save(data)
         return deepcopy(found)
 

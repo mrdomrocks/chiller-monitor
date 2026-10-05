@@ -31,6 +31,20 @@ def test_create_site_strips_password_and_rejects_bad_area():
         update_point(site["id"], "chw_supply", {**get_site(site["id"])["points"][0], "function": "coil", "address_number": 40001})
 
 
+def test_site_list_keeps_the_compressor_demos():
+    from app.store import list_sites
+
+    first = list_sites()
+    names = {site["id"]: site["name"] for site in first}
+    assert names["demo-1"] == "Demo — single compressor"
+    assert names["demo-2"] == "Demo — two compressors"
+    assert names["demo-4"] == "Demo — four compressors"
+    assert names["demo-6"] == "Demo — six compressors"
+    again = list_sites()
+    assert [site["id"] for site in again].count("demo-1") == 1
+    assert [site["id"] for site in again].count("demo-6") == 1
+
+
 def test_rtu_over_tcp_protocol_is_saved_with_the_site():
     site = create_site("Tunnel")
     assert site["protocol"] == "tcp"
