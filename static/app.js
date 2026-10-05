@@ -94,6 +94,15 @@ function sessionOpen() {
   return Boolean(S.live && S.live.site_id === S.siteId && S.live.modbus?.state !== "idle");
 }
 
+function demoNeedsSimulator() {
+  return Boolean(sizedDemoCount(S.site?.id) && !S.live?.simulator_running);
+}
+
+function sizedDemoCount(siteId) {
+  const match = /^demo-(\d+)$/.exec(siteId || "");
+  return match && [1, 2, 4, 6].includes(Number(match[1])) ? Number(match[1]) : null;
+}
+
 async function guard(work) {
   if (busy) return;
   busy = true;
@@ -217,7 +226,7 @@ function paintHeader() {
   } else {
     text.textContent = "Offline";
   }
-  const open = sessionOpen();
+  const open = sessionOpen() && !demoNeedsSimulator();
   button.textContent = busy ? "Working…" : open ? "Disconnect" : "Connect";
   button.disabled = busy || !S.site;
   for (const sizeButton of document.querySelectorAll("[data-action='demo-size']")) {
@@ -1164,9 +1173,15 @@ async function onClick(event) {
   if (action === "toggle-connect") {
     await guard(async () => {
       if (!S.site) return;
-      if (sessionOpen()) {
+      if (sessionOpen() && !demoNeedsSimulator()) {
         S.live = await api(`/api/sites/${S.site.id}/disconnect`, { method: "POST" });
         toast("Disconnected", true);
+      } else if (sizedDemoCount(S.site.id)) {
+        S.live = await api(`/api/demo/compressors/${sizedDemoCount(S.site.id)}`, { method: "POST" });
+        await refreshSites(S.site.id);
+        S.view = "plant";
+        render();
+        toast("Demo chiller is running", true);
       } else {
         S.live = await api(`/api/sites/${S.site.id}/connect`, { method: "POST" });
         S.view = "plant";

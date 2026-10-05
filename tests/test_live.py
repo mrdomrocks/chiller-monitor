@@ -255,6 +255,42 @@ def test_sized_demo_http_rejects_other_counts():
         assert stopped.json()["simulator_running"] is False
 
 
+def test_connecting_a_sized_demo_starts_the_simulator():
+    asyncio.run(connect_sized_demo())
+
+
+async def connect_sized_demo():
+    from app.store import ensure_sized_demo
+
+    monitor = Monitor()
+    try:
+        ensure_sized_demo(6, 36977)
+        started = await monitor.connect("demo-6")
+        assert started["simulator_running"] is True
+        assert started["site_id"] == "demo-6"
+        assert get_site("demo-6")["modbus_port"] != 36977
+        first = None
+        moved = None
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.25)
+            values = monitor.snapshot()["values"]
+            supply = values.get("chw_supply")
+            count = values.get("compressor_count")
+            if not (supply and supply["quality"] == "good" and count and count["value"] == 6):
+                continue
+            if first is None:
+                first = supply["value"]
+            elif supply["value"] != first:
+                moved = supply["value"]
+                break
+        assert first is not None and 5 < first < 10
+        assert moved is not None and moved != first
+        assert "cond_pump" not in monitor.snapshot()["values"]
+    finally:
+        await monitor.shutdown()
+
+
 def test_demo_http_and_websocket():
     from app.main import app
 

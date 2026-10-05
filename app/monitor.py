@@ -11,7 +11,16 @@ from app.blocks import plan_reads
 from app.decode import engineering_from_raw, encode_numeric, format_value, in_alarm, wire_bool
 from app.modbus_tcp import ModbusTcpClient
 from app.simulator import ChillerSimulator
-from app.store import DEMO_ID, DEMO_SIZES, ensure_demo, ensure_sized_demo, get_site, is_demo_site, sized_demo_id
+from app.store import (
+    DEMO_ID,
+    DEMO_SIZES,
+    ensure_demo,
+    ensure_sized_demo,
+    get_site,
+    is_demo_site,
+    sized_demo_count,
+    sized_demo_id,
+)
 
 log = logging.getLogger("chiller")
 
@@ -64,6 +73,22 @@ class Monitor:
             self._subs.remove(queue)
 
     async def connect(self, site_id: str) -> dict:
+        count = sized_demo_count(site_id)
+        if count is not None:
+            same = (
+                self._sim is not None
+                and self._sim.compressors == count
+                and self._sim.site_id == sized_demo_id(count)
+            )
+            if not same:
+                return await self.start_sized_demo(count)
+        elif site_id == DEMO_ID:
+            same = self._sim is not None and not self._sim.compressors and self._sim.site_id == DEMO_ID
+            if not same:
+                return await self.start_demo()
+        return await self._open(site_id)
+
+    async def _open(self, site_id: str) -> dict:
         site = get_site(site_id)
         async with self._lock:
             await self._teardown_locked()

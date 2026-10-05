@@ -32,6 +32,16 @@ def sized_demo_id(count: int) -> str:
     return f"demo-{int(count)}"
 
 
+def sized_demo_count(site_id: str | None) -> int | None:
+    if not isinstance(site_id, str) or not site_id.startswith("demo-"):
+        return None
+    try:
+        count = int(site_id.removeprefix("demo-"))
+    except ValueError:
+        return None
+    return count if count in DEMO_SIZES else None
+
+
 def is_demo_site(site_id: str | None) -> bool:
     return site_id == DEMO_ID or (isinstance(site_id, str) and site_id.startswith("demo-"))
 _LOCK = threading.Lock()
