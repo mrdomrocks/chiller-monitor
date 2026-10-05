@@ -128,7 +128,6 @@ function ensureShell() {
       </div>
       <div class="top-actions">
         <button type="button" class="primary" id="connectBtn" data-action="toggle-connect">Connect</button>
-        <button type="button" id="demoBtn" data-action="demo">Demo chiller</button>
         <div class="demo-sizes" role="group" aria-label="Compressor count demos">
           <span class="kicker">Compressors</span>
           <button type="button" data-action="demo-size" data-count="1" aria-label="Demo with one compressor">1</button>
@@ -170,17 +169,23 @@ function ensureShell() {
   document.addEventListener("input", onInput);
 }
 
+function siteListRank(site) {
+  const match = /^demo-(\d+)$/.exec(site.id || "");
+  return match ? Number(match[1]) : 1000;
+}
+
 function fillSiteSelect() {
   const select = document.getElementById("siteSelect");
   select.replaceChildren();
-  if (!S.sites.length) {
+  const sites = [...S.sites].sort((a, b) => siteListRank(a) - siteListRank(b) || a.name.localeCompare(b.name));
+  if (!sites.length) {
     const option = document.createElement("option");
     option.value = "";
     option.textContent = "No sites yet";
     select.appendChild(option);
     return;
   }
-  for (const site of S.sites) {
+  for (const site of sites) {
     const option = document.createElement("option");
     option.value = site.id;
     option.textContent = site.name;
@@ -193,7 +198,6 @@ function paintHeader() {
   const lamp = document.getElementById("connLamp");
   const text = document.getElementById("connText");
   const button = document.getElementById("connectBtn");
-  const demo = document.getElementById("demoBtn");
   if (!lamp) return;
   lamp.className = "lamp";
   if (!S.site) {
@@ -216,9 +220,6 @@ function paintHeader() {
   const open = sessionOpen();
   button.textContent = busy ? "Working…" : open ? "Disconnect" : "Connect";
   button.disabled = busy || !S.site;
-  const classicDemo = Boolean(S.live?.simulator_running && S.live.site_id === "demo");
-  demo.textContent = classicDemo ? "Stop demo" : "Demo chiller";
-  demo.disabled = busy;
   for (const sizeButton of document.querySelectorAll("[data-action='demo-size']")) {
     const active = Boolean(S.live?.simulator_running && S.live.site_id === `demo-${sizeButton.dataset.count}`);
     sizeButton.setAttribute("aria-pressed", active ? "true" : "false");
@@ -244,8 +245,7 @@ function render() {
         <h1>Watch a chiller through the RUT</h1>
         <p>Join the chiller network on this laptop, then Chiller Monitor opens Modbus TCP to the controller. On site that is the RUT Wi-Fi. Away from site, use the laptop’s existing remote connection first. Customise display on the plant page chooses what the HMI shows. The register map holds addresses and scaling.</p>
         <div class="actions">
-          <button class="primary" type="button" data-action="demo">Start the demo chiller</button>
-          <button type="button" data-action="demo-size" data-count="1">Single compressor</button>
+          <button class="primary" type="button" data-action="demo-size" data-count="1">Single compressor</button>
           <button type="button" data-action="demo-size" data-count="2">Two compressors</button>
           <button type="button" data-action="demo-size" data-count="4">Four compressors</button>
           <button type="button" data-action="demo-size" data-count="6">Six compressors</button>
