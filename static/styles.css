@@ -351,7 +351,7 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
 .compressor-bank { margin-bottom: 16px; }
 .compressors {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr));
   gap: 10px;
 }
 .comp-card { padding: 14px; }
