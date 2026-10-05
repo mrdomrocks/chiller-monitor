@@ -141,8 +141,15 @@ async def _read_frame(reader: asyncio.StreamReader) -> tuple[int, int, bytes]:
     return transaction, rest[0], rest[1:]
 
 
-async def serve_device(device: ModbusDevice, host: str, port: int) -> asyncio.Server:
+async def serve_device(
+    device: ModbusDevice,
+    host: str,
+    port: int,
+    clients: set | None = None,
+) -> asyncio.Server:
     async def on_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        if clients is not None:
+            clients.add(writer)
         try:
             while True:
                 transaction, unit, pdu = await _read_frame(reader)
@@ -152,6 +159,8 @@ async def serve_device(device: ModbusDevice, host: str, port: int) -> asyncio.Se
         except (asyncio.IncompleteReadError, ConnectionError, ModbusError):
             pass
         finally:
+            if clients is not None:
+                clients.discard(writer)
             writer.close()
             try:
                 await writer.wait_closed()

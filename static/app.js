@@ -129,6 +129,13 @@ function ensureShell() {
       <div class="top-actions">
         <button type="button" class="primary" id="connectBtn" data-action="toggle-connect">Connect</button>
         <button type="button" id="demoBtn" data-action="demo">Demo chiller</button>
+        <div class="demo-sizes" role="group" aria-label="Compressor count demos">
+          <span class="kicker">Compressors</span>
+          <button type="button" data-action="demo-size" data-count="1" aria-label="Demo with one compressor">1</button>
+          <button type="button" data-action="demo-size" data-count="2" aria-label="Demo with two compressors">2</button>
+          <button type="button" data-action="demo-size" data-count="4" aria-label="Demo with four compressors">4</button>
+          <button type="button" data-action="demo-size" data-count="6" aria-label="Demo with six compressors">6</button>
+        </div>
         <button type="button" data-action="add-site">New site</button>
       </div>
     </header>
@@ -209,8 +216,14 @@ function paintHeader() {
   const open = sessionOpen();
   button.textContent = busy ? "Working…" : open ? "Disconnect" : "Connect";
   button.disabled = busy || !S.site;
-  demo.textContent = S.live?.simulator_running ? "Stop demo" : "Demo chiller";
+  const classicDemo = Boolean(S.live?.simulator_running && S.live.site_id === "demo");
+  demo.textContent = classicDemo ? "Stop demo" : "Demo chiller";
   demo.disabled = busy;
+  for (const sizeButton of document.querySelectorAll("[data-action='demo-size']")) {
+    const active = Boolean(S.live?.simulator_running && S.live.site_id === `demo-${sizeButton.dataset.count}`);
+    sizeButton.setAttribute("aria-pressed", active ? "true" : "false");
+    sizeButton.disabled = busy;
+  }
   for (const tab of document.querySelectorAll("#tabs button")) {
     tab.setAttribute("aria-selected", tab.dataset.view === S.view ? "true" : "false");
   }
@@ -232,6 +245,10 @@ function render() {
         <p>Join the chiller network on this laptop, then Chiller Monitor opens Modbus TCP to the controller. On site that is the RUT Wi-Fi. Away from site, use the laptop’s existing remote connection first. Customise display on the plant page chooses what the HMI shows. The register map holds addresses and scaling.</p>
         <div class="actions">
           <button class="primary" type="button" data-action="demo">Start the demo chiller</button>
+          <button type="button" data-action="demo-size" data-count="1">Single compressor</button>
+          <button type="button" data-action="demo-size" data-count="2">Two compressors</button>
+          <button type="button" data-action="demo-size" data-count="4">Four compressors</button>
+          <button type="button" data-action="demo-size" data-count="6">Six compressors</button>
           <button type="button" data-action="add-site">Create a site</button>
         </div>
       </section>`;
@@ -744,7 +761,20 @@ function paintLive() {
   const title = document.getElementById("plantTitle");
   if (title && S.site) title.textContent = plantTitle();
   const flag = document.getElementById("demoFlag");
-  if (flag) flag.hidden = !(S.live && S.live.demo && S.live.site_id === S.siteId);
+  if (flag) {
+    const showing = Boolean(S.live && S.live.demo && S.live.site_id === S.siteId);
+    flag.hidden = !showing;
+    if (showing) {
+      const sized = /^demo-(\d+)$/.exec(S.live.site_id);
+      if (sized) {
+        const count = Number(sized[1]);
+        const noun = count === 1 ? "compressor" : "compressors";
+        flag.textContent = `Demo controller with ${count} ${noun}. The plant shows that many compressor cards.`;
+      } else {
+        flag.textContent = "Demo controller on this computer. Supply temperature alarms above its high limit so the banner can be checked.";
+      }
+    }
+  }
   const detail = document.getElementById("commsDetail");
   if (detail && S.site) {
     if (!S.live || S.live.site_id !== S.siteId) {
@@ -1156,7 +1186,7 @@ async function onClick(event) {
   }
   if (action === "demo") {
     await guard(async () => {
-      if (S.live?.simulator_running) {
+      if (S.live?.simulator_running && S.live.site_id === "demo") {
         S.live = await api("/api/demo/stop", { method: "POST" });
         await refreshSites(S.siteId);
         toast("Demo stopped", true);
@@ -1167,6 +1197,18 @@ async function onClick(event) {
         render();
         toast("Demo chiller is running", true);
       }
+    });
+    return;
+  }
+  if (action === "demo-size") {
+    const count = Number(button.dataset.count);
+    await guard(async () => {
+      S.live = await api(`/api/demo/compressors/${count}`, { method: "POST" });
+      await refreshSites(`demo-${count}`);
+      S.view = "plant";
+      render();
+      const noun = count === 1 ? "compressor" : "compressors";
+      toast(`Demo with ${count} ${noun} is running`, true);
     });
     return;
   }

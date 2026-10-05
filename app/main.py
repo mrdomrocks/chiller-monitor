@@ -302,6 +302,14 @@ async def demo_start():
         raise HTTPException(400, str(exc)) from exc
 
 
+@app.post("/api/demo/compressors/{count}")
+async def demo_compressors(count: int):
+    try:
+        return await monitor.start_sized_demo(count)
+    except (ValueError, RuntimeError, OSError, TimeoutError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/demo/stop")
 async def demo_stop():
     return await monitor.stop_demo()

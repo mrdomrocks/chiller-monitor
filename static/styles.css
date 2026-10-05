@@ -106,7 +106,26 @@ button { cursor: pointer; }
 .lamp.ok { background: var(--ok); }
 .lamp.bad { background: var(--alarm); }
 .lamp.wait { background: var(--wait); }
-.top-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.top-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.demo-sizes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.demo-sizes .kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+.top .demo-sizes .kicker { color: rgba(255, 255, 255, 0.82); }
+.top .demo-sizes button { min-width: 36px; padding: 8px 10px; }
+.top .demo-sizes button[aria-pressed="true"] {
+  background: #fff;
+  color: var(--brand);
+  border-color: #fff;
+  font-weight: 700;
+}
 
 button.primary, button.ghost, button.danger, .tabs button, .point-list button, .toggle button {
   border-radius: 8px;
@@ -175,7 +194,12 @@ main { padding: 16px 20px 40px; }
 .welcome { padding: 28px; max-width: 760px; }
 .welcome h1 { margin: 0 0 8px; font-size: 1.7rem; }
 .welcome p { color: var(--muted); line-height: 1.5; }
-.welcome .actions { display: flex; gap: 8px; margin-top: 16px; }
+.welcome .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.welcome .actions button[aria-pressed="true"] {
+  border-color: var(--brand);
+  color: var(--brand);
+  font-weight: 700;
+}
 
 .plant-tools { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .customise {
