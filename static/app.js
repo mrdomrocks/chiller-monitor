@@ -1016,8 +1016,8 @@ function paintLive() {
     const summary = document.querySelector("[data-alarm-summary]");
     const connectedHere = Boolean(S.live && S.live.site_id === S.siteId);
     if (summary) {
-      if (messages.length) summary.textContent = messages.join(", ");
-      else if (connectedHere && alarmReading && alarmReading.quality === "good") summary.textContent = alarmOn ? "Alarm" : (alarmReading.display || "Normal");
+      if (messages.length || alarmOn) summary.textContent = "Alarm";
+      else if (connectedHere && alarmReading && alarmReading.quality === "good") summary.textContent = alarmReading.display || "Normal";
       else summary.textContent = "—";
     }
     if (!connectedHere) {
