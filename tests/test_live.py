@@ -161,6 +161,30 @@ def test_stock_demo_setpoint_becomes_a_float():
     assert setpoint["address_number"] == 40100
 
 
+def test_listing_sites_upgrades_a_stock_demo_setpoint():
+    from app.store import ensure_sized_demo, list_sites
+
+    ensure_sized_demo(6, 1502)
+    data = _load()
+    found = next(site for site in data["sites"] if site["id"] == "demo-6")
+    for point in found["points"]:
+        if point["id"] == "setpoint":
+            point["dtype"] = "int16"
+            point["scale"] = 0.1
+            point["address_number"] = 40003
+        if point["id"] == "capacity":
+            point["address_number"] = 40004
+            point["dtype"] = "uint16"
+            point["function"] = "holding"
+    _save(data)
+    list_sites()
+    site = get_site("demo-6")
+    setpoint = next(point for point in site["points"] if point["id"] == "setpoint")
+    capacity = next(point for point in site["points"] if point["id"] == "capacity")
+    assert setpoint["dtype"] == "float32"
+    assert capacity["address_number"] == 40010
+
+
 def test_existing_demo_gains_compressor_points():
     ensure_demo(1502)
     data = _load()

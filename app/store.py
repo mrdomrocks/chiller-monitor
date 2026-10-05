@@ -387,10 +387,28 @@ def _ensure_demo_catalog(data: dict) -> bool:
     return changed
 
 
+def _setpoint_layout(site: dict) -> tuple:
+    points = {point["id"]: point for point in site.get("points") or []}
+    setpoint = points.get("setpoint") or {}
+    capacity = points.get("capacity") or {}
+    return (
+        setpoint.get("dtype"),
+        setpoint.get("address_number"),
+        setpoint.get("scale"),
+        capacity.get("address_number"),
+    )
+
+
 def list_sites() -> list[dict]:
     with _LOCK:
         data = _load()
         changed = _ensure_demo_catalog(data)
+        for site in data["sites"]:
+            if not is_demo_site(site["id"]):
+                continue
+            before = _setpoint_layout(site)
+            _upgrade_stock_float_setpoint(site)
+            changed = changed or _setpoint_layout(site) != before
         if changed or any(_ensure_chiller_name(site) for site in data["sites"]):
             _save(data)
         return [public_site(site) for site in data["sites"]]
