@@ -11,6 +11,7 @@ from app.blocks import plan_reads
 from app.decode import engineering_from_raw, encode_numeric, format_value, in_alarm, wire_bool
 from app.modbus_tcp import ModbusTcpClient, apply_link
 from app.simulator import ChillerSimulator
+from app.readings import LOG_LIMIT, now_stamp
 from app.store import DEMO_ID, DEMO_SIZES, ensure_demo, ensure_sized_demo, get_site, is_demo_site, sized_demo_id
 
 log = logging.getLogger("chiller")
@@ -49,7 +50,13 @@ class Monitor:
         self._subs: list[asyncio.Queue] = []
         self._last: dict[str, dict] = {}
         self._history: dict[str, list[float]] = {}
+        self._log: list[dict] = []
         self._snap: dict = idle_snapshot()
+
+    def readings(self, site_id: str) -> list[dict]:
+        if self.site_id != site_id:
+            return []
+        return deepcopy(self._log)
 
     def snapshot(self) -> dict:
         return deepcopy(self._snap)
@@ -71,6 +78,7 @@ class Monitor:
             self._stop = asyncio.Event()
             self._last.clear()
             self._history.clear()
+            self._log.clear()
             self.client = ModbusTcpClient(
                 site["modbus_host"],
                 site["modbus_port"],
@@ -259,6 +267,8 @@ class Monitor:
             state, detail = "polling", f"{via}, unit {site['unit_id']}"
         if good:
             self._last_good = time.monotonic()
+        self._log.append({"time": now_stamp(), "values": values})
+        del self._log[:-LOG_LIMIT]
         previous_vpn = self._snap.get("vpn") or {"state": "down", "detail": ""}
         self._publish(
             {
@@ -300,6 +310,7 @@ class Monitor:
         self.site_id = None
         self._last.clear()
         self._history.clear()
+        self._log.clear()
         snap = idle_snapshot()
         snap["simulator_running"] = self._sim is not None
         self._publish(snap)

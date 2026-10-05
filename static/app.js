@@ -306,6 +306,7 @@ function renderPlant(main) {
       </div>
       <div class="plant-tools">
         <p class="muted" id="commsDetail"></p>
+        <button type="button" data-action="export-readings">Export readings</button>
         ${S.customise ? "" : `<button type="button" data-action="customise">Customise display</button>`}
       </div>
     </div>
@@ -1301,6 +1302,29 @@ async function onClick(event) {
       S.pointId = null;
       render();
       toast("1-compressor list loaded", true);
+    });
+  } else if (action === "export-readings") {
+    await guard(async () => {
+      const response = await fetch(`/api/sites/${S.site.id}/readings.csv`);
+      const text = await response.text();
+      if (!response.ok) {
+        let message = response.statusText;
+        try {
+          const data = JSON.parse(text);
+          message = data.detail || message;
+        } catch {
+          if (text) message = text;
+        }
+        throw new Error(message);
+      }
+      const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+      const match = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") || "");
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = match ? match[1] : "readings.csv";
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast("Readings downloaded", true);
     });
   } else if (action === "export") {
     await guard(async () => {
