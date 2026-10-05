@@ -144,25 +144,39 @@ def read_engineering(device: ModbusDevice, point: dict, fallback):
 
 
 class ChillerSimulator:
-    def __init__(self, host: str = "127.0.0.1", port: int = 1502, unit: int = 1):
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 1502,
+        unit: int = 1,
+        site_id: str = DEMO_ID,
+        compressors: int | None = None,
+    ):
         self.host = host
         self.port = port
+        self.site_id = site_id
+        self.compressors = compressors
         self.device = ModbusDevice(unit=unit)
         self._server: asyncio.Server | None = None
         self._task: asyncio.Task | None = None
+        self._clients: set = set()
 
     def points(self) -> list[dict]:
         try:
-            return get_site(DEMO_ID)["points"]
+            return get_site(self.site_id)["points"]
         except KeyError:
             return default_points()
 
     async def start(self) -> int:
         paint(self.device, default_points(), DEFAULTS)
         try:
-            self._server = await serve_device(self.device, self.host, self.port)
+            self._frame()
+        except Exception:
+            log.exception("Demo frame failed")
+        try:
+            self._server = await serve_device(self.device, self.host, self.port, self._clients)
         except OSError:
-            self._server = await serve_device(self.device, self.host, 0)
+            self._server = await serve_device(self.device, self.host, 0, self._clients)
         self.port = self._server.sockets[0].getsockname()[1]
         self._task = asyncio.create_task(self._loop())
         log.info("Demo chiller listening on %s:%s", self.host, self.port)
@@ -177,9 +191,12 @@ class ChillerSimulator:
                 pass
             self._task = None
         if self._server is not None:
+            for writer in list(self._clients):
+                writer.close()
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+            self._clients.clear()
 
     async def _loop(self) -> None:
         try:
@@ -226,10 +243,14 @@ class ChillerSimulator:
         for point in points:
             if point["writable"] and point["id"] not in ("setpoint", "enable", "compressor_count"):
                 values[point["id"]] = read_engineering(self.device, point, 0)
-        count = 2
-        count_point = by_id.get("compressor_count")
-        if count_point is not None and count_point.get("writable"):
-            count = fitted_count(read_engineering(self.device, count_point, 2))
+        if self.compressors:
+            count = fitted_count(self.compressors)
+            values["chiller_name"] = "1 compressor" if count == 1 else f"{count} compressors"
+        else:
+            count = 2
+            count_point = by_id.get("compressor_count")
+            if count_point is not None and count_point.get("writable"):
+                count = fitted_count(read_engineering(self.device, count_point, 2))
         values["compressor_count"] = count
         staged = stage_loads(count, float(capacity), bool(enabled))
         for index, (load, running) in enumerate(staged, start=1):

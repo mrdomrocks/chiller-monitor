@@ -1,0 +1,75 @@
+﻿RegName,RegAddress,RegType,Meaningful Name,Place
+SI - Input Message,400001,INT16,,Table
+SI - Alarm/Run Signal.0,400002,BIT,"General Alarm 0 = Off, 1 = On",Home
+SI - LIQ valve2/Bypass/T.Normal valve/Run.1,400002,BIT,,Table
+SI - LIQ valve1/Elec heat/Four-valve/Bypass.2,400002,BIT,,Table
+SI - 2#Comp.3,400002,BIT,,Table
+SI - 1#Comp.4,400002,BIT,"Comp #1 Running 0 = Off, 1 = On",Home
+SI - Cool Pump/Natural Cooling Valve.5,400002,BIT,,Table
+SI - Cold Pump.6,400002,BIT,"Pump Running 0 = Off, 1 = On",Home
+SI - I/O Board Relay 1.7,400002,BIT,,Table
+SI - I/O Board Relay 2.8,400002,BIT,,Table
+SI - I/O Board Relay 3.9,400002,BIT,,Table
+SI - I/O Board Relay 4.10,400002,BIT,,Table
+SI - I/O Board Relay 5.11,400002,BIT,,Table
+SI - I/O Board Relay 6.12,400002,BIT,,Table
+SI - I/O Board Relay 7.13,400002,BIT,,Table
+SI - Water Outlet,400003,INT16,Water Outlet Temp,Home
+SI - Evap Outlet Temp,400004,INT16,Evaporator Outlet Temp,Table
+SI - Current1,400005,INT16,,Table
+SI - Current2,400006,INT16,,Table
+SI - Pump Current,400007,INT16,Pump Running Current,Table
+SI - 1#Comp Current,400008,INT16,Comp #1 Running Current,Table
+SI - Phase State,400009,INT16,,Table
+SI - Run Time Comp1 (Hour),400010,INT16,,Table
+SI - Run Time Comp1 (Min),400011,INT16,,Table
+SI - Run Time Comp2 (Hour),400012,INT16,,Table
+SI - Run Time Comp2 (Min),400013,INT16,,Table
+SI - Run Time Pump (Hour),400014,INT16,,Table
+SI - Run Time Pump (Min),400015,INT16,,Table
+SI - Alarm Message1,400016,BIT,,Alarm
+SI - Alarm Message 2,400017,BIT,,Alarm
+SI - Alarm Message 3,400018,BIT,,Alarm
+SI - Alarm Message 4,400019,BIT,,Alarm
+SI - Alarm Message 5,400020,BIT,,Alarm
+SI - Alarm Message 6,400021,BIT,,Alarm
+SI - Alarm Message 7,400022,BIT,,Alarm
+SI - Run Time Comp3 (Hour),400023,INT16,,Table
+SI - Run Time Comp3 (Min),400024,INT16,,Table
+SI - Run Time Comp4 (Hour),400025,INT16,,Table
+SI - Run Time Comp4 (Min),400026,INT16,,Table
+SI - Flow 1 (Cold/Outlet/Low),400028,INT16,,Table
+SI - Flow 2 (Cool/Inlet/Nor),400029,INT16,,Table
+SI - Suction Pressure,400033,INT16,Comp 1# Suction Pressure,Home
+SI - Press 2 (Cool/Inlet/Nor),400034,INT16,,Table
+SI - 1# Suction Temp,400035,INT16,Comp 1# Suction Temp,Table
+SI - 1# Evap Temp,400036,INT16,Comp 1# Evap Temp,Table
+SI - Temp 5 (2#Gas in/2#Vent),400037,INT16,,Table
+SI - Temp 6(2#valve out/1#vent/2#Evap),400038,INT16,,Table
+SI - Unit active status,400039,INT16,"0 = Off, 1 = Comp on Standby, 2= Running, 3 = Shutting Down, 4 = Alarm",Home
+SI - Discharge Pressure,400040,INT16,Comp 1# Discharge Pressure,Home
+SI - Analog board cond press2,400041,INT16,,Table
+SI - Fan Output (V),400048,INT16,Fan Output ,Home
+SI - IO board switch,400056,INT16,,Table
+SI - IO board temp 1,400057,INT16,,Table
+SI - IO board temp 2,400058,INT16,,Table
+SI - IO board temp 3,400059,INT16,,Table
+SI - IO board temp 4,400060,INT16,,Table
+SI - IO board temp 5,400061,INT16,,Table
+SI - IO board temp 6,400062,INT16,,Table
+SI - Pressure 4 IO board mA2,400065,INT16,,Table
+SI - Valve 4 Target Superheat Degree,400077,INT16,,Table
+SI - Valve 3 Target Superheat Degree,400074,INT16,,Table
+SI - Valve 2 Target Superheat Degree,400071,INT16,,Table
+SI - Valve 4 Current Superheat Degree,400076,INT16,,Table
+SI - Valve 3 Current Superheat Degree,400073,INT16,,Table
+SI - Valve 2 Current Superheat Degree,400070,INT16,,Table
+SI - Valve 4 Opening,400078,INT16,,Table
+SI - Valve 3 Opening,400075,INT16,,Table
+SI - Valve 2 Opening,400072,INT16,,Table
+SI - Alarm Message 9,400066,INT16,,Table
+SI - Valve 1 Current Superheat Degree,400067,INT16,Circuit 1# Superheat,Home
+SI - Valve 1 Target Superheat Degree,400068,INT16,,Table
+SI - Valve 1 Opening,400069,INT16,Circuit 1# EEV Opening,Home
+SI - Pressure 3 IO board mA1,400064,INT16,,Table
+SI - Alarm Message 8,400063,BIT,,Table

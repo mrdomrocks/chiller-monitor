@@ -180,6 +180,79 @@ async def demo_session():
         await monitor.shutdown()
 
 
+def test_sized_demos_report_fitted_compressors():
+    asyncio.run(sized_demo_session())
+
+
+async def sized_demo_session():
+    monitor = Monitor()
+    try:
+        for count in (1, 2, 4, 6):
+            started = await monitor.start_sized_demo(count)
+            assert started["site_id"] == f"demo-{count}"
+            assert started["simulator_running"] is True
+            site = get_site(f"demo-{count}")
+            fitted = next(point for point in site["points"] if point["id"] == "compressor_count")
+            assert fitted["writable"] is False
+            values = None
+            deadline = time.monotonic() + 4
+            while time.monotonic() < deadline:
+                await asyncio.sleep(0.1)
+                values = monitor.snapshot()["values"]
+                reported = values.get("compressor_count")
+                first = values.get("comp_1_load")
+                if reported and reported["value"] == count and first and first["quality"] == "good" and first["value"] > 0:
+                    break
+            assert values["compressor_count"]["quality"] == "good"
+            assert values["compressor_count"]["value"] == count
+            assert values["comp_1_load"]["value"] > 0
+            assert values["comp_1_run"]["value"] is True
+            if count < 6:
+                idle = values[f"comp_{count + 1}_load"]
+                assert idle["quality"] == "good"
+                assert idle["value"] == 0
+                assert values[f"comp_{count + 1}_run"]["value"] is False
+            name = values.get("chiller_name")
+            assert name["quality"] == "good"
+            expected = "1 compressor" if count == 1 else f"{count} compressors"
+            assert name["value"] == expected
+
+        with pytest.raises(ValueError):
+            await monitor.start_sized_demo(3)
+
+        classic = await monitor.start_demo()
+        assert classic["site_id"] == "demo"
+        count_point = next(point for point in get_site("demo")["points"] if point["id"] == "compressor_count")
+        assert count_point["writable"] is True
+        sized = next(point for point in get_site("demo-4")["points"] if point["id"] == "compressor_count")
+        assert sized["writable"] is False
+    finally:
+        await monitor.shutdown()
+
+
+def test_sized_demo_http_rejects_other_counts():
+    from app.main import app
+
+    with TestClient(app) as client:
+        started = client.post("/api/demo/compressors/4")
+        assert started.status_code == 200, started.text
+        assert started.json()["site_id"] == "demo-4"
+        reported = None
+        for _ in range(40):
+            time.sleep(0.1)
+            live = client.get("/api/live").json()
+            reported = live["values"].get("compressor_count")
+            if reported and reported["quality"] == "good" and reported["value"] == 4:
+                break
+        assert reported["value"] == 4
+        assert live["demo"] is True
+        rejected = client.post("/api/demo/compressors/3")
+        assert rejected.status_code == 400
+        stopped = client.post("/api/demo/stop")
+        assert stopped.status_code == 200
+        assert stopped.json()["simulator_running"] is False
+
+
 def test_demo_http_and_websocket():
     from app.main import app
 
