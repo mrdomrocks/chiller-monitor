@@ -620,6 +620,58 @@ def _fill_missing_template(site: dict) -> None:
     site["bindings"] = bindings
 
 
+def _upgrade_stock_float_setpoint(site: dict) -> None:
+    """Turn the original one-register demo setpoint into a two-register float.
+
+    Only the untouched starter map is changed: int16, scale 0.1, holding 40003.
+    Capacity moves from 40004 to 40010 so the float has both registers.
+    """
+    points = {point["id"]: point for point in site["points"]}
+    setpoint = points.get("setpoint")
+    capacity = points.get("capacity")
+    if setpoint is None:
+        return
+    stock = (
+        setpoint.get("dtype") == "int16"
+        and float(setpoint.get("scale", 1)) == 0.1
+        and int(setpoint.get("address_number") or 0) == 40003
+        and setpoint.get("function") == "holding"
+        and (setpoint.get("addressing") or "modicon") == "modicon"
+    )
+    if not stock:
+        return
+    if (
+        capacity is not None
+        and capacity.get("dtype") == "uint16"
+        and capacity.get("function") == "holding"
+        and int(capacity.get("address_number") or 0) == 40004
+    ):
+        used = {
+            int(point["address_number"])
+            for point in site["points"]
+            if point.get("id") != "capacity" and point.get("function") == "holding"
+        }
+        if 40010 not in used:
+            capacity["address_number"] = 40010
+            capacity["notes"] = "Running capacity. Held at 40010 so the float setpoint can use 40003 and 40004."
+    if (
+        capacity is not None
+        and capacity.get("function") == "holding"
+        and int(capacity.get("address_number") or 0) == 40004
+    ):
+        return
+    template = next(point for point in default_points() if point["id"] == "setpoint")
+    setpoint["dtype"] = "float32"
+    setpoint["byte_order"] = "ABCD"
+    setpoint["scale"] = 1.0
+    setpoint["offset"] = 0.0
+    setpoint["decimals"] = 1
+    setpoint["notes"] = template["notes"]
+    setpoint["writable"] = True
+    setpoint["write_min"] = 4
+    setpoint["write_max"] = 15
+
+
 def ensure_sized_demo(count: int, port: int) -> dict:
     """A simulated chiller whose fitted-compressor register stays at this count."""
     count = int(count)
@@ -646,6 +698,7 @@ def ensure_sized_demo(count: int, port: int) -> dict:
         found["inter_frame_ms"] = 0
         found["vpn_mode"] = "none"
         _fill_missing_template(found)
+        _upgrade_stock_float_setpoint(found)
         _lock_fitted_count(found)
         _save(data)
         return deepcopy(found)
@@ -676,6 +729,7 @@ def ensure_demo(port: int) -> dict:
             found["inter_frame_ms"] = 0
             found["vpn_mode"] = "none"
         _fill_missing_template(found)
+        _upgrade_stock_float_setpoint(found)
         for point in found["points"]:
             if point["id"] == "compressor_count":
                 point["writable"] = True
