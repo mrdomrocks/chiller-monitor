@@ -19,6 +19,21 @@ from app.paths import data_dir, vpn_dir
 from app.template import ROLES, default_bindings, default_points
 
 DEMO_ID = "demo"
+DEMO_SIZES = (1, 2, 4, 6)
+_DEMO_NAMES = {
+    1: "Demo — single compressor",
+    2: "Demo — two compressors",
+    4: "Demo — four compressors",
+    6: "Demo — six compressors",
+}
+
+
+def sized_demo_id(count: int) -> str:
+    return f"demo-{int(count)}"
+
+
+def is_demo_site(site_id: str | None) -> bool:
+    return site_id == DEMO_ID or (isinstance(site_id, str) and site_id.startswith("demo-"))
 _LOCK = threading.Lock()
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 _WIDGETS = ("value", "gauge", "status", "alarm", "setpoint", "hidden")
@@ -552,6 +567,9 @@ def apply_template(site_id: str) -> dict:
 
 
 def _fill_missing_template(site: dict) -> None:
+    site["points"] = [point for point in site["points"] if point.get("id") != "cond_pump"]
+    if isinstance(site.get("bindings"), dict):
+        site["bindings"].pop("cond_pump", None)
     taken = {point["id"] for point in site["points"]}
     for raw in default_points():
         if raw["id"] not in taken:
@@ -563,6 +581,40 @@ def _fill_missing_template(site: dict) -> None:
         if bindings.get(role_id) is None and point_id in ids:
             bindings[role_id] = point_id
     site["bindings"] = bindings
+
+
+def ensure_sized_demo(count: int, port: int) -> dict:
+    """A simulated chiller whose fitted-compressor register stays at this count."""
+    count = int(count)
+    if count not in DEMO_SIZES:
+        raise ValueError("Choose a demo with 1, 2, 4, or 6 compressors")
+    with _LOCK:
+        data = _load()
+        site_id = sized_demo_id(count)
+        found = next((site for site in data["sites"] if site["id"] == site_id), None)
+        if found is None:
+            found = _new_site(_DEMO_NAMES[count], site_id)
+            data["sites"].insert(0, found)
+        found["name"] = _DEMO_NAMES[count]
+        found["location"] = "This computer"
+        noun = "compressor" if count == 1 else "compressors"
+        found["notes"] = (
+            f"Simulated chiller with {count} {noun}. "
+            "The fitted-compressor register stays at that count, so the plant page shows that many cards."
+        )
+        found["modbus_host"] = "127.0.0.1"
+        found["modbus_port"] = int(port)
+        found["poll_ms"] = 500
+        found["vpn_mode"] = "none"
+        _fill_missing_template(found)
+        for point in found["points"]:
+            if point["id"] == "compressor_count":
+                point["writable"] = False
+                point["write_min"] = None
+                point["write_max"] = None
+                point["widget"] = "hidden"
+        _save(data)
+        return deepcopy(found)
 
 
 def ensure_demo(port: int) -> dict:

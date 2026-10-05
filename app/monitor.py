@@ -11,7 +11,7 @@ from app.blocks import plan_reads
 from app.decode import engineering_from_raw, encode_numeric, format_value, in_alarm, wire_bool
 from app.modbus_tcp import ModbusTcpClient, apply_link
 from app.simulator import ChillerSimulator
-from app.store import DEMO_ID, ensure_demo, get_site
+from app.store import DEMO_ID, DEMO_SIZES, ensure_demo, ensure_sized_demo, get_site, is_demo_site, sized_demo_id
 
 log = logging.getLogger("chiller")
 
@@ -97,6 +97,9 @@ class Monitor:
 
     async def start_demo(self) -> dict:
         async with self._lock:
+            if self._sim is not None and self._sim.compressors:
+                await self._teardown_locked()
+                await self._stop_simulator()
             if self._sim is None:
                 simulator = ChillerSimulator()
                 await simulator.start()
@@ -105,8 +108,23 @@ class Monitor:
         ensure_demo(port)
         return await self.connect(DEMO_ID)
 
+    async def start_sized_demo(self, count: int) -> dict:
+        count = int(count)
+        if count not in DEMO_SIZES:
+            raise ValueError("Choose a demo with 1, 2, 4, or 6 compressors")
+        async with self._lock:
+            await self._teardown_locked()
+            await self._stop_simulator()
+            ensure_sized_demo(count, 1502)
+            simulator = ChillerSimulator(port=0, site_id=sized_demo_id(count), compressors=count)
+            await simulator.start()
+            self._sim = simulator
+            port = simulator.port
+        ensure_sized_demo(count, port)
+        return await self.connect(sized_demo_id(count))
+
     async def stop_demo(self) -> dict:
-        if self.site_id == DEMO_ID:
+        if is_demo_site(self.site_id):
             await self.disconnect()
         async with self._lock:
             await self._stop_simulator()
@@ -245,7 +263,7 @@ class Monitor:
         self._publish(
             {
                 "site_id": site_id,
-                "demo": site_id == DEMO_ID and self._sim is not None,
+                "demo": is_demo_site(site_id) and self._sim is not None,
                 "simulator_running": self._sim is not None,
                 "vpn": previous_vpn,
                 "modbus": {
@@ -297,7 +315,7 @@ class Monitor:
         via = "RTU over TCP" if protocol == "rtu" else "Modbus TCP"
         return {
             "site_id": site["id"],
-            "demo": site["id"] == DEMO_ID and self._sim is not None,
+            "demo": is_demo_site(site["id"]) and self._sim is not None,
             "simulator_running": self._sim is not None,
             "vpn": {"state": "skipped", "detail": "Using this laptop's current network."},
             "modbus": {
