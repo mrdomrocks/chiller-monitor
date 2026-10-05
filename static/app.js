@@ -431,7 +431,7 @@ function alarmFace() {
         <div>
           <span class="kicker">Alarm</span>
           <span class="face-point">${esc(point.name)}</span>
-          <strong data-value="${esc(point.id)}">—</strong>
+          <strong data-alarm-summary>—</strong>
           ${slotSelect("alarm")}
         </div>
       </article>`
@@ -443,9 +443,6 @@ function alarmFace() {
   const faults = faultPoints().map((fault) => `
     <li data-fault="${esc(fault.id)}" hidden>
       <strong>${esc(fault.name)}</strong>
-      <span data-value="${esc(fault.id)}">—</span>
-      <small>${esc(addressLabel(fault))}</small>
-      <small>Register <span data-raw="${esc(fault.id)}">—</span></small>
     </li>`).join("");
   return `<div class="face-alarm">
     ${lamp}
@@ -1004,10 +1001,18 @@ function paintLive() {
     const alarmOn = Boolean(alarmReading && alarmReading.quality === "good" && alarmReading.value);
     faultBox.classList.toggle("tripped", Boolean(tripped) || alarmOn);
     faultClear.hidden = Boolean(tripped);
-    if (!S.live || S.live.site_id !== S.siteId) {
-      faultClear.textContent = "Connect to read fault registers from the controller.";
+    const messages = [...faultBox.querySelectorAll("[data-fault]:not([hidden]) strong")].map((el) => el.textContent.trim());
+    const summary = document.querySelector("[data-alarm-summary]");
+    const connectedHere = Boolean(S.live && S.live.site_id === S.siteId);
+    if (summary) {
+      if (messages.length) summary.textContent = messages.join(", ");
+      else if (connectedHere && alarmReading && alarmReading.quality === "good") summary.textContent = alarmOn ? "Alarm" : (alarmReading.display || "Normal");
+      else summary.textContent = "—";
+    }
+    if (!connectedHere) {
+      faultClear.textContent = "Connect to read the alarm message from the controller.";
     } else if (alarmOn) {
-      faultClear.textContent = "Alarm is on. The controller has not output a fault.";
+      faultClear.textContent = "Alarm is on. The controller has not output a fault message.";
     } else {
       faultClear.textContent = "No fault from the controller.";
     }
