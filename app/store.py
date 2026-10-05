@@ -559,6 +559,9 @@ def apply_template(site_id: str) -> dict:
 
 
 def _fill_missing_template(site: dict) -> None:
+    site["points"] = [point for point in site["points"] if point.get("id") != "cond_pump"]
+    if isinstance(site.get("bindings"), dict):
+        site["bindings"].pop("cond_pump", None)
     taken = {point["id"] for point in site["points"]}
     for raw in default_points():
         if raw["id"] not in taken:

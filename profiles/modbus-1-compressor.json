@@ -2311,7 +2311,6 @@
     "pressure": null,
     "compressor": "comp_1_running",
     "evap_pump": "pump_running",
-    "cond_pump": null,
     "alarm": "general_alarm",
     "compressor_count": null,
     "chiller_name": null,

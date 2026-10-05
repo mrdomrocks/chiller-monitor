@@ -20,6 +20,8 @@ def test_create_site_strips_password_and_rejects_bad_area():
     site = create_site("Roof chiller")
     assert site["vpn_password"] == ""
     assert any(point["id"] == "chw_supply" for point in site["points"])
+    assert all(point["id"] != "cond_pump" for point in site["points"])
+    assert "cond_pump" not in site["bindings"]
     count = next(point for point in site["points"] if point["id"] == "compressor_count")
     assert count["writable"] is False
     assert site["bindings"]["comp_2_load"] == "comp_2_load"
