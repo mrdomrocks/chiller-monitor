@@ -668,9 +668,27 @@ function settingForm(point) {
   </form>`;
 }
 
+function sheetAddress(point) {
+  if ((point.addressing || "modicon") === "protocol") return null;
+  const spans = {
+    holding: [40001, 49999, 400000],
+    input: [30001, 39999, 300000],
+    discrete: [10001, 19999, 100000],
+    coil: [1, 9999, 0],
+  };
+  const span = spans[point.function];
+  if (!span) return null;
+  const number = Number(point.address_number);
+  if (!Number.isFinite(number) || number < span[0] || number > span[1]) return null;
+  const sheet = span[2] + (number - span[0] + 1);
+  return sheet === number ? null : sheet;
+}
+
 function addressLabel(point) {
   const prefix = { holding: "4x", input: "3x", coil: "0x", discrete: "1x" }[point.function];
-  return `${prefix} ${point.address_number}${point.bit === null || point.bit === undefined ? "" : " bit " + point.bit}`;
+  const bit = point.bit === null || point.bit === undefined ? "" : ` bit ${point.bit}`;
+  const sheet = sheetAddress(point);
+  return `${prefix} ${point.address_number}${bit}${sheet ? ` · ${sheet}` : ""}`;
 }
 
 function compressorIndexes() {
@@ -918,13 +936,14 @@ function renderMap(main) {
   if (!S.pointId || !pointById(S.pointId)) S.pointId = site.points[0]?.id || null;
   const point = pointById(S.pointId);
   main.innerHTML = `
-    <p class="help">This register map is the Modbus profile. Connect, or choose Start live HMI on the connection page, and the plant page shows each enabled point from the live controller. Match area, address, type, and scale to the controller manual before trusting the numbers.</p>
+    <p class="help">This register map is the Modbus profile. Connect, or choose Start live HMI on the connection page, and the plant page shows each enabled point from the live controller. Match area, address, type, and scale to the controller manual before trusting the numbers. The controller sheet writes holding registers as 400001. The same register is Modicon 40001, shown beside it.</p>
     <div class="toolbar">
       <input id="pointSearch" type="search" placeholder="Filter points">
       <div class="actions">
         <button type="button" data-action="add-point">Add point</button>
         <button type="button" data-action="export">Export map</button>
         <label class="inline">Import <input id="importFile" type="file" accept="application/json,.json"></label>
+        <button type="button" data-action="one-compressor">Load 1-compressor list</button>
         <button type="button" class="danger" data-action="template">Reload chiller template</button>
       </div>
     </div>
@@ -1274,6 +1293,14 @@ async function onClick(event) {
       S.pointId = null;
       render();
       toast("Template loaded", true);
+    });
+  } else if (action === "one-compressor") {
+    if (!confirm("Replace this register map with the 1-compressor controller list, 400001 to 400078? Rows the sheet does not list are left out.")) return;
+    await guard(async () => {
+      S.site = await api(`/api/sites/${S.site.id}/profile/one-compressor`, { method: "POST" });
+      S.pointId = null;
+      render();
+      toast("1-compressor list loaded", true);
     });
   } else if (action === "export") {
     await guard(async () => {

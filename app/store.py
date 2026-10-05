@@ -15,7 +15,7 @@ from app.decode import (
     ORDERS,
     wire_address,
 )
-from app.paths import data_dir, vpn_dir
+from app.paths import ROOT, data_dir, vpn_dir
 from app.template import ROLES, default_bindings, default_points
 
 DEMO_ID = "demo"
@@ -304,20 +304,20 @@ def vpn_config_path(site: dict):
     return path
 
 
-def _name_address(site: dict) -> int:
+def _name_address(site: dict, start: int = 40021) -> int:
     used: set[int] = set()
     widths = {"float64": 4, "float32": 2, "uint32": 2, "int32": 2, "string": 8}
     for point in site["points"]:
         if point.get("function") != "holding" or point.get("addressing", "modicon") != "modicon":
             continue
-        start = int(point["address_number"])
+        origin = int(point["address_number"])
         for offset in range(widths.get(point.get("dtype"), 1)):
-            used.add(start + offset)
-    address = 40021
+            used.add(origin + offset)
+    address = start
     while any((address + offset) in used for offset in range(8)):
         address += 1
         if address > 49990:
-            return 40021
+            return start
     return address
 
 
@@ -325,14 +325,16 @@ def _ensure_chiller_name(site: dict) -> bool:
     """Give an older site a text point for the plant heading without replacing its map."""
     changed = False
     if not any(point["id"] == "chiller_name" for point in site["points"]):
+        # Keep the name off the controller sheet. That list ends at 40078 and leaves gaps on purpose.
+        name_at = 40100 if any(point.get("id") == "water_outlet" for point in site["points"]) else 40021
         site["points"].append(
             normalize_point(
                 {
                     "id": "chiller_name",
                     "name": "Chiller name",
                     "group": "Identity",
-                    "notes": "ASCII text, two characters per register. The plant heading uses this when it is not blank. An empty register shows as Chiller.",
-                    "address_number": _name_address(site),
+                    "notes": "ASCII text, two characters per register. The plant heading uses this when it is not blank. An empty register shows as Chiller. This point is not in the controller sheet.",
+                    "address_number": _name_address(site, name_at),
                     "dtype": "string",
                     "string_chars": 16,
                     "widget": "hidden",
@@ -404,6 +406,14 @@ def list_sites() -> list[dict]:
         data = _load()
         changed = _ensure_demo_catalog(data)
         for site in data["sites"]:
+            if site["id"] == sized_demo_id(1) and _starter_map(site):
+                _apply_one_compressor_map(site)
+                site["notes"] = (
+                    "Simulated chiller with 1 compressor. The register map is the controller sheet: "
+                    "400001–400078, stored as Modicon 40001–40078. Addresses the sheet skips are not listed."
+                )
+                changed = True
+                continue
             if not is_demo_site(site["id"]):
                 continue
             before = _setpoint_layout(site)
@@ -621,10 +631,47 @@ def apply_template(site_id: str) -> dict:
         return public_site(site)
 
 
+def one_compressor_document() -> dict:
+    path = ROOT / "profiles" / "modbus-1-compressor.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _point_ids(site: dict) -> set[str]:
+    return {point.get("id") for point in site.get("points") or []}
+
+
+def _starter_map(site: dict) -> bool:
+    ids = _point_ids(site)
+    return "chw_supply" in ids and "water_outlet" not in ids
+
+
+def _apply_one_compressor_map(site: dict) -> None:
+    """Replace a site map with every row from the 1-compressor controller sheet."""
+    document = one_compressor_document()
+    site["points"] = [normalize_point(point) for point in document["points"]]
+    site["bindings"] = normalize_bindings(document.get("bindings"), site["points"])
+    site["layout"] = normalize_layout(document.get("layout"), site.get("layout"))
+    if document.get("evap_label"):
+        site["evap_label"] = str(document["evap_label"])[:40]
+    if document.get("cond_label"):
+        site["cond_label"] = str(document["cond_label"])[:40]
+
+
+def apply_one_compressor(site_id: str) -> dict:
+    with _LOCK:
+        data = _load()
+        site = _find(data, site_id)
+        _apply_one_compressor_map(site)
+        _save(data)
+        return public_site(site)
+
+
 def _fill_missing_template(site: dict) -> None:
     site["points"] = [point for point in site["points"] if point.get("id") != "cond_pump"]
     if isinstance(site.get("bindings"), dict):
         site["bindings"].pop("cond_pump", None)
+    if "water_outlet" in _point_ids(site):
+        return
     taken = {point["id"] for point in site["points"]}
     for raw in default_points():
         if raw["id"] not in taken:
@@ -715,8 +762,16 @@ def ensure_sized_demo(count: int, port: int) -> dict:
         found["protocol"] = "tcp"
         found["inter_frame_ms"] = 0
         found["vpn_mode"] = "none"
-        _fill_missing_template(found)
-        _upgrade_stock_float_setpoint(found)
+        if count == 1 and (_starter_map(found) or "water_outlet" in _point_ids(found)):
+            if _starter_map(found):
+                _apply_one_compressor_map(found)
+            found["notes"] = (
+                "Simulated chiller with 1 compressor. The register map is the controller sheet: "
+                "400001–400078, stored as Modicon 40001–40078. Addresses the sheet skips are not listed."
+            )
+        elif "water_outlet" not in _point_ids(found):
+            _fill_missing_template(found)
+            _upgrade_stock_float_setpoint(found)
         _lock_fitted_count(found)
         _save(data)
         return deepcopy(found)

@@ -124,9 +124,9 @@ def test_stage_loads_follows_fitted_count():
 def test_stock_demo_setpoint_becomes_a_float():
     from app.store import ensure_sized_demo
 
-    ensure_sized_demo(1, 1502)
+    ensure_sized_demo(2, 1502)
     data = _load()
-    found = next(site for site in data["sites"] if site["id"] == "demo-1")
+    found = next(site for site in data["sites"] if site["id"] == "demo-2")
     for point in found["points"]:
         if point["id"] == "setpoint":
             point["dtype"] = "int16"
@@ -139,7 +139,7 @@ def test_stock_demo_setpoint_becomes_a_float():
             point["function"] = "holding"
             point["address_number"] = 40004
     _save(data)
-    site = ensure_sized_demo(1, 1502)
+    site = ensure_sized_demo(2, 1502)
     setpoint = next(point for point in site["points"] if point["id"] == "setpoint")
     capacity = next(point for point in site["points"] if point["id"] == "capacity")
     assert setpoint["dtype"] == "float32"
@@ -148,14 +148,14 @@ def test_stock_demo_setpoint_becomes_a_float():
     assert capacity["address_number"] == 40010
 
     data = _load()
-    custom = next(site for site in data["sites"] if site["id"] == "demo-1")
+    custom = next(site for site in data["sites"] if site["id"] == "demo-2")
     for point in custom["points"]:
         if point["id"] == "setpoint":
             point["dtype"] = "int16"
             point["scale"] = 0.1
             point["address_number"] = 40100
     _save(data)
-    kept = ensure_sized_demo(1, 1502)
+    kept = ensure_sized_demo(2, 1502)
     setpoint = next(point for point in kept["points"] if point["id"] == "setpoint")
     assert setpoint["dtype"] == "int16"
     assert setpoint["address_number"] == 40100
@@ -294,6 +294,27 @@ async def sized_demo_session():
             assert started["site_id"] == f"demo-{count}"
             assert started["simulator_running"] is True
             site = get_site(f"demo-{count}")
+            if count == 1:
+                assert all(point["id"] != "compressor_count" for point in site["points"])
+                assert any(point["id"] == "water_outlet" and point["address_number"] == 40003 for point in site["points"])
+                values = None
+                deadline = time.monotonic() + 4
+                while time.monotonic() < deadline:
+                    await asyncio.sleep(0.1)
+                    values = monitor.snapshot()["values"]
+                    outlet = values.get("water_outlet")
+                    running = values.get("comp_1_running")
+                    if outlet and outlet["quality"] == "good" and running and running["value"] is True:
+                        break
+                assert values["water_outlet"]["quality"] == "good"
+                assert 5 <= values["water_outlet"]["value"] <= 10
+                assert values["comp_1_running"]["value"] is True
+                assert values["fan_output"]["value"] == 7
+                assert values["comp_1_suction_pressure"]["value"] == 45
+                name = values.get("chiller_name")
+                assert name["quality"] == "good"
+                assert name["value"] == "1 compressor"
+                continue
             fitted = next(point for point in site["points"] if point["id"] == "compressor_count")
             assert fitted["writable"] is False
             values = None

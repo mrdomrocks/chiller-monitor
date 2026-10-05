@@ -19,6 +19,7 @@ from app.monitor import Monitor, probe_site
 from app.paths import ROOT
 from app.store import (
     add_point,
+    apply_one_compressor,
     apply_template,
     clear_vpn_config,
     create_site,
@@ -213,6 +214,14 @@ def put_hmi(site_id: str, body: dict):
 def post_template(site_id: str):
     try:
         return apply_template(site_id)
+    except KeyError as exc:
+        raise HTTPException(404, "Site not found") from exc
+
+
+@app.post("/api/sites/{site_id}/profile/one-compressor")
+def post_one_compressor(site_id: str):
+    try:
+        return apply_one_compressor(site_id)
     except KeyError as exc:
         raise HTTPException(404, "Site not found") from exc
 
