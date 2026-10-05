@@ -9,7 +9,7 @@ import shutil
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
@@ -17,6 +17,7 @@ from app.decode import describe_write, engineering_from_raw, format_value
 from app.mapper import mapper
 from app.monitor import Monitor, probe_site
 from app.paths import ROOT
+from app.readings import csv_filename, readings_csv
 from app.store import (
     add_point,
     apply_one_compressor,
@@ -224,6 +225,21 @@ def post_one_compressor(site_id: str):
         return apply_one_compressor(site_id)
     except KeyError as exc:
         raise HTTPException(404, "Site not found") from exc
+
+
+@app.get("/api/sites/{site_id}/readings.csv")
+def get_readings_csv(site_id: str):
+    try:
+        site = get_site(site_id)
+    except KeyError as exc:
+        raise HTTPException(404, "Site not found") from exc
+    body = readings_csv(site, monitor.readings(site_id))
+    filename = csv_filename(site["name"])
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/sites/{site_id}/export")

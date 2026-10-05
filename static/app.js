@@ -306,6 +306,7 @@ function renderPlant(main) {
       </div>
       <div class="plant-tools">
         <p class="muted" id="commsDetail"></p>
+        <button type="button" data-action="export-readings">Export readings</button>
         ${S.customise ? "" : `<button type="button" data-action="customise">Customise display</button>`}
       </div>
     </div>
@@ -1302,6 +1303,18 @@ async function onClick(event) {
       render();
       toast("1-compressor list loaded", true);
     });
+  } else if (action === "export-readings") {
+    const slug = (S.site.name || "site").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "site";
+    const now = new Date();
+    const pad = (part) => String(part).padStart(2, "0");
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const link = document.createElement("a");
+    link.href = `/api/sites/${S.site.id}/readings.csv`;
+    link.download = `${slug}-readings-${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    toast("Readings downloaded", true);
   } else if (action === "export") {
     await guard(async () => {
       const map = await api(`/api/sites/${S.site.id}/export`);

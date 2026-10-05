@@ -1,6 +1,8 @@
 """Site storage and a live read of the demo chiller."""
 
 import asyncio
+import csv
+import io
 import time
 
 import pytest
@@ -397,3 +399,31 @@ def test_demo_http_and_websocket():
         stopped = client.post("/api/demo/stop")
         assert stopped.status_code == 200
         assert stopped.json()["simulator_running"] is False
+
+
+def test_connected_demo_exports_readings_as_csv():
+    from app.main import app
+
+    with TestClient(app) as client:
+        started = client.post("/api/demo/start")
+        assert started.status_code == 200, started.text
+        supply = None
+        for _ in range(40):
+            time.sleep(0.1)
+            supply = client.get("/api/live").json()["values"].get("chw_supply")
+            if supply and supply["quality"] == "good":
+                break
+        assert supply is not None and supply["quality"] == "good"
+        response = client.get("/api/sites/demo/readings.csv")
+        assert response.status_code == 200
+        assert "text/csv" in response.headers["content-type"]
+        assert response.headers["content-disposition"].startswith("attachment;")
+        rows = list(csv.DictReader(io.StringIO(response.text.lstrip("\ufeff"))))
+        outlet = [row for row in rows if row["point"] == "CHW supply"]
+        assert outlet
+        assert outlet[-1]["quality"] == "good"
+        assert outlet[-1]["sheet_address"] == "400001"
+        assert outlet[-1]["unit"] == "°C"
+        assert 5 < float(outlet[-1]["value"]) < 10
+        assert outlet[-1]["time"]
+        client.post("/api/demo/stop")
