@@ -8,6 +8,7 @@ import time
 from copy import deepcopy
 
 from app.blocks import plan_reads
+from app.alarms import fault_message
 from app.decode import engineering_from_raw, encode_numeric, format_value, in_alarm, wire_bool
 from app.modbus_tcp import ModbusTcpClient, apply_link
 from app.simulator import ChillerSimulator
@@ -233,6 +234,7 @@ class Monitor:
                     item = {
                         "value": engineering,
                         "display": format_value(point, engineering),
+                        "message": fault_message(point, engineering) or "",
                         "quality": "good",
                         "alarm": in_alarm(point, engineering),
                         "unit": point["unit"],
@@ -366,6 +368,7 @@ def _stale(previous: dict | None, error: BaseException | None) -> dict:
     return {
         "value": None,
         "display": "—",
+        "message": "",
         "quality": "bad",
         "alarm": False,
         "unit": "",

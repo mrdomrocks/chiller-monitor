@@ -300,6 +300,8 @@ class ChillerSimulator:
             if point_id in by_id and point_id not in values:
                 values[point_id] = sample
         tripped = bool(values.get("general_alarm"))
+        if tripped and "unit_active_status" in by_id:
+            values["unit_active_status"] = 4
         if "alarm_message1" in by_id:
             values["alarm_message1"] = tripped
         if "alarm_message_9" in by_id:

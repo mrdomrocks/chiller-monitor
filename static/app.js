@@ -349,9 +349,10 @@ function loadPoint() {
 }
 
 function faultPoints() {
+  const named = new Set(["general_alarm", "unit_active_status"]);
   return (S.site?.points || [])
-    .filter((point) => point.enabled && /^alarm_message/.test(point.id))
-    .sort((a, b) => a.address_number - b.address_number || a.sort - b.sort);
+    .filter((point) => point.enabled && (named.has(point.id) || /^alarm_message/.test(point.id)))
+    .sort((a, b) => a.address_number - b.address_number || (a.bit ?? -1) - (b.bit ?? -1));
 }
 
 function faultTripped(point, reading) {
@@ -362,6 +363,16 @@ function faultTripped(point, reading) {
   if (typeof reading.value === "number") return reading.value !== 0;
   if (typeof reading.value === "string") return reading.value.trim() !== "";
   return false;
+}
+
+function shownFault(point, reading) {
+  if (!reading || reading.quality !== "good") return "";
+  if (reading.message) return String(reading.message);
+  if (point.id === "unit_active_status") return "";
+  if (point.id === "general_alarm" || /^alarm_message/.test(point.id)) {
+    return faultTripped(point, reading) ? point.name : "";
+  }
+  return "";
 }
 
 function analogTile(roleId, title) {
@@ -442,7 +453,7 @@ function alarmFace() {
       </article>`;
   const faults = faultPoints().map((fault) => `
     <li data-fault="${esc(fault.id)}" hidden>
-      <strong>${esc(fault.name)}</strong>
+      <strong data-fault-text="${esc(fault.id)}"></strong>
     </li>`).join("");
   return `<div class="face-alarm">
     ${lamp}
@@ -981,16 +992,16 @@ function paintLive() {
   }
   const banner = document.getElementById("alarmBanner");
   if (banner && S.site) {
-    const alarms = visiblePoints().filter((point) => {
-      const reading = readingFor(point.id);
-      return reading && reading.quality === "good" && reading.alarm;
-    });
-    banner.hidden = alarms.length === 0;
-    banner.textContent = alarms.length ? `Alarm · ${alarms.map((point) => point.name).join(", ")}` : "";
+    const faults = faultPoints().map((point) => shownFault(point, readingFor(point.id))).filter(Boolean);
+    banner.hidden = faults.length === 0;
+    banner.textContent = faults.length ? `Alarm · ${faults.join(", ")}` : "";
   }
   document.querySelectorAll("[data-fault]").forEach((el) => {
     const point = pointById(el.dataset.fault);
-    el.hidden = !faultTripped(point, readingFor(el.dataset.fault));
+    const message = point ? shownFault(point, readingFor(el.dataset.fault)) : "";
+    el.hidden = !message;
+    const text = el.querySelector("[data-fault-text]");
+    if (text) text.textContent = message;
   });
   const faultBox = document.getElementById("faultBox");
   const faultClear = document.getElementById("faultClear");
