@@ -70,6 +70,16 @@ def test_http_creates_and_updates_a_point():
         renamed = next(item for item in saved.json()["points"] if item["id"] == "setpoint")
         assert renamed["name"] == "CHW setpoint"
         assert renamed["write_max"] == 12
+        assert renamed["dtype"] == "float32"
+        plan = client.post("/api/write-plan", json={"point": renamed, "value": 7.5})
+        assert plan.status_code == 200
+        body = plan.json()
+        assert body["function"] == 16
+        assert body["registers"] == [16624, 0]
+        assert "0x40F0" in body["text"]
+        low = client.post("/api/write-plan", json={"point": renamed, "value": 1})
+        assert low.status_code == 400
+        assert "minimum" in low.json()["detail"]
 
 
 def test_display_layout_is_saved_with_the_site():

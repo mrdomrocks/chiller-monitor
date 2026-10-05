@@ -220,6 +220,128 @@ def encode_numeric(point: dict, engineering: float) -> list[int]:
     return encode_registers(raw, point["dtype"], point.get("byte_order") or "ABCD")
 
 
+_ORDER_NOTE = {
+    "ABCD": "ABCD keeps the high word in the first register. That is the usual Modbus order.",
+    "CDAB": "CDAB swaps the two words, so the low word is written first.",
+    "BADC": "BADC swaps the bytes inside each register.",
+    "DCBA": "DCBA reverses both the bytes and the words.",
+}
+
+
+def describe_write(point: dict, engineering) -> dict:
+    """Plain description of the registers a setting will send."""
+    if point.get("write_min") is not None and not isinstance(engineering, bool):
+        if float(engineering) < float(point["write_min"]):
+            raise ValueError(f"Below the minimum of {point['write_min']}")
+    if point.get("write_max") is not None and not isinstance(engineering, bool):
+        if float(engineering) > float(point["write_max"]):
+            raise ValueError(f"Above the maximum of {point['write_max']}")
+
+    if point["function"] == "coil" or point["dtype"] == "bool":
+        return _describe_bool(point, bool(engineering))
+
+    value = float(engineering)
+    registers = encode_numeric(point, value)
+    names, protocol = _register_names(point, len(registers))
+    function = 16 if len(registers) > 1 or point.get("force_fc16") else 6
+    unit = f" {point['unit']}" if point.get("unit") else ""
+    shown = format_value(point, value)
+    lines = _number_lines(point, value, registers, names, function, shown, unit, protocol)
+    return {
+        "text": "\n".join(lines),
+        "lines": lines,
+        "function": function,
+        "address": protocol,
+        "registers": registers,
+        "display": f"{shown}{unit}".strip(),
+    }
+
+
+def _describe_bool(point: dict, engineering: bool) -> dict:
+    flag = wire_bool(point, engineering)
+    label = (point.get("on_label") or "On") if engineering else (point.get("off_label") or "Off")
+    names, protocol = _register_names(point, 1)
+    if point["function"] == "coil":
+        code = 0xFF00 if flag else 0x0000
+        lines = [
+            f"{label} is one coil, not a number.",
+            f"Function 5 writes coil {names[0]} to {code:#06x}.",
+        ]
+        function = 5
+        registers = [code]
+    else:
+        word = 1 if flag else 0
+        if point.get("bit") is not None:
+            lines = [
+                f"{label} sets bit {int(point['bit'])} of register {names[0]}.",
+                "The other bits in that register are left as they are.",
+                "Function 6 writes the updated register.",
+            ]
+        else:
+            lines = [
+                f"{label} is written as {word} in register {names[0]}.",
+                "Function 6 writes that one holding register.",
+            ]
+        function = 6
+        registers = [word]
+    return {
+        "text": "\n".join(lines),
+        "lines": lines,
+        "function": function,
+        "address": protocol,
+        "registers": registers,
+        "display": label,
+    }
+
+
+def _number_lines(point, value, registers, names, function, shown, unit, protocol) -> list[str]:
+    dtype = point["dtype"]
+    order = point.get("byte_order") or "ABCD"
+    scale = float(point.get("scale", 1))
+    offset = float(point.get("offset", 0))
+    stored = (float(value) - offset) / scale
+    action = "Function 16 writes these registers:" if function == 16 else "Function 6 writes this register:"
+    rows = [f"  {name} = {word} (0x{word & 0xFFFF:04X})" for name, word in zip(names, registers)]
+    if dtype == "float32":
+        lines = [f"{shown}{unit} is sent as a 32-bit float (IEEE 754), using two registers."]
+    elif dtype == "float64":
+        lines = [f"{shown}{unit} is sent as a 64-bit float (IEEE 754), using four registers."]
+    else:
+        lines = [f"{shown}{unit} is sent as a whole number in the register, not as a float."]
+    if dtype in ("float32", "float64"):
+        lines.append(_ORDER_NOTE[order])
+        if scale != 1 or offset != 0:
+            lines.append(f"The float stored is ({_trim(value)} − {_trim(offset)}) / {_trim(scale)} = {_trim(stored)}.")
+    elif scale != 1 or offset != 0:
+        whole = int(round(stored))
+        if len(registers) == 1:
+            lines.append(f"Register = ({_trim(value)} − {_trim(offset)}) / {_trim(scale)} = {whole}.")
+        else:
+            lines.append(
+                f"The number stored is ({_trim(value)} − {_trim(offset)}) / {_trim(scale)} = {whole}, split across the registers below."
+            )
+    lines.append(action)
+    if point.get("addressing") != "protocol":
+        lines.append(f"{names[0]} is protocol address {protocol}.")
+    lines.extend(rows)
+    return lines
+
+
+def _trim(number) -> str:
+    text = f"{float(number):.6f}".rstrip("0").rstrip(".")
+    return text if text not in ("", "-") else "0"
+
+
+def _register_names(point: dict, count: int) -> tuple[list[str], int]:
+    number = int(point["address_number"])
+    protocol = wire_address(point["function"], number, point.get("addressing") or "modicon")
+    if point.get("addressing") == "protocol":
+        names = [str(protocol + offset) for offset in range(count)]
+    else:
+        names = [str(number + offset) for offset in range(count)]
+    return names, protocol
+
+
 def wire_bool(point: dict, engineering: bool) -> bool:
     flag = bool(engineering)
     if point.get("invert"):

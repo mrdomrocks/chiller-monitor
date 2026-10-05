@@ -459,10 +459,7 @@ function profileWrite(point) {
       <button type="button" data-requires-connection data-action="write-bool" data-point="${esc(point.id)}" data-flag="false">${esc(point.off_label)}</button>
     </div>`;
   }
-  return `<form data-write-point="${esc(point.id)}" class="write-row">
-    <input name="value" type="number" step="any" placeholder="${esc(point.unit)}">
-    <button class="primary" type="submit" data-requires-connection>Apply</button>
-  </form>`;
+  return settingForm(point);
 }
 
 function profileCard(point) {
@@ -645,10 +642,7 @@ function controlCards() {
           <button type="button" data-requires-connection data-action="write-bool" data-point="${esc(point.id)}" data-flag="true">${esc(point.on_label)}</button>
           <button type="button" data-requires-connection data-action="write-bool" data-point="${esc(point.id)}" data-flag="false">${esc(point.off_label)}</button>
         </div>`
-      : `<form data-write-point="${esc(point.id)}" class="write-row">
-          <input name="value" type="number" step="any" placeholder="${esc(point.unit)}">
-          <button class="primary" type="submit" data-requires-connection>Apply</button>
-        </form>`;
+      : settingForm(point);
     return `<article class="control"><span class="kicker">${esc(point.group)}</span><strong>${esc(point.name)}</strong><div data-value="${esc(point.id)}">—</div>${body}</article>`;
   }).join("");
 }
@@ -661,6 +655,17 @@ function tableRows() {
       <td class="raw" data-raw="${esc(point.id)}">—</td>
       <td><span class="tag" data-quality="${esc(point.id)}">—</span></td>
     </tr>`).join("");
+}
+
+function settingForm(point) {
+  return `<form data-write-point="${esc(point.id)}" class="write-form">
+    <div class="write-row">
+      <input name="value" type="number" step="any" placeholder="${esc(point.unit)}" aria-label="New ${esc(point.name)}">
+      <button class="primary" type="submit" data-requires-connection>Apply</button>
+    </div>
+    <p class="muted write-hint">Type a value to see the registers this setting will send. Nothing is written until you apply it.</p>
+    <p class="wire-note" data-wire-note hidden></p>
+  </form>`;
 }
 
 function addressLabel(point) {
@@ -988,12 +993,20 @@ function pointForm(point) {
     </div>
     <label>Notes <textarea name="notes" maxlength="300">${esc(point.notes)}</textarea></label>
     <div class="form-grid" style="margin-top:12px">
-      <label>Sample raw words <input id="sampleRaw" placeholder="72 or 17184, 0"></label>
+      <label>Sample raw words <input id="sampleRaw" placeholder="72 or 16624, 0"></label>
       <div class="form-actions" style="align-items:end">
         <button type="button" data-action="preview">Decode sample</button>
         <span id="previewOut"></span>
       </div>
     </div>
+    <div class="form-grid" style="margin-top:12px">
+      <label>Try a setting <input id="sampleSetting" type="number" step="any" placeholder="7.5"></label>
+      <div class="form-actions" style="align-items:end">
+        <button type="button" data-action="preview-setting">Show the registers</button>
+      </div>
+    </div>
+    <p class="help">Type the engineering value, then show the registers. The same note appears under Apply before the controller is written.</p>
+    <p id="settingOut" class="wire-note" hidden></p>
     <div class="form-actions" style="margin-top:14px">
       <button class="primary" type="submit">Save point</button>
       <button type="button" data-action="move" data-dir="up">Move up</button>
@@ -1315,6 +1328,28 @@ async function onClick(event) {
       const result = await api("/api/preview", { method: "POST", body: { point: collectPoint(form), registers } });
       document.getElementById("previewOut").textContent = `${result.display}`;
     });
+  } else if (action === "preview-setting") {
+    const form = document.getElementById("pointForm");
+    const out = document.getElementById("settingOut");
+    const raw = document.getElementById("sampleSetting").value.trim();
+    const value = Number(raw);
+    if (!out) return;
+    if (raw === "" || !Number.isFinite(value)) {
+      out.hidden = false;
+      out.textContent = "Enter a number to see the registers.";
+      return;
+    }
+    await guard(async () => {
+      try {
+        const plan = await api("/api/write-plan", { method: "POST", body: { point: collectPoint(form), value } });
+        out.hidden = false;
+        out.textContent = plan.text;
+      } catch (error) {
+        out.hidden = false;
+        out.textContent = error.message;
+        throw error;
+      }
+    });
   } else if (action === "write-count") {
     const point = bound("compressor_count");
     const count = Number(button.dataset.count);
@@ -1370,18 +1405,37 @@ async function onSubmit(event) {
     event.preventDefault();
     const point = pointById(form.dataset.writePoint);
     const value = Number(form.elements.value.value);
+    const note = form.querySelector("[data-wire-note]");
     if (!point || !Number.isFinite(value)) {
       toast("Enter a number to write");
       return;
     }
-    const unit = point.unit ? ` ${point.unit}` : "";
-    if (!confirm(`Write ${value}${unit} to ${point.name} on the controller?`)) return;
+    let plan;
+    try {
+      plan = await api("/api/write-plan", { method: "POST", body: { point, value } });
+    } catch (error) {
+      if (note) {
+        note.hidden = false;
+        note.textContent = error.message;
+      }
+      toast(error.message);
+      return;
+    }
+    if (note) {
+      note.hidden = false;
+      note.textContent = plan.text;
+    }
+    if (!confirm(`${plan.text}\n\nWrite this to ${point.name} on the controller?`)) return;
     await guard(async () => {
       await api(`/api/sites/${S.site.id}/write`, {
         method: "POST",
         body: { point_id: point.id, value },
       });
       form.elements.value.value = "";
+      if (note) {
+        note.hidden = true;
+        note.textContent = "";
+      }
       toast(`Wrote ${point.name}`, true);
     });
   }
@@ -1522,7 +1576,42 @@ function onInput(event) {
       button.hidden = query && !button.textContent.toLowerCase().includes(query);
     });
   }
-  if (event.target.form && event.target.form.id === "pointForm") wireHint();
+  const form = event.target.form;
+  if (form && form.id === "pointForm") wireHint();
+  if (form && form.dataset.writePoint && event.target.name === "value") scheduleWritePlan(form);
+}
+
+function scheduleWritePlan(form) {
+  clearTimeout(form._planTimer);
+  form._planTimer = setTimeout(() => showWritePlan(form), 250);
+}
+
+async function showWritePlan(form) {
+  const note = form.querySelector("[data-wire-note]");
+  if (!note) return;
+  const raw = form.elements.value.value.trim();
+  if (raw === "") {
+    note.hidden = true;
+    note.textContent = "";
+    return;
+  }
+  const value = Number(raw);
+  const point = pointById(form.dataset.writePoint);
+  if (!point || !Number.isFinite(value)) {
+    note.hidden = false;
+    note.textContent = "Enter a number to write.";
+    return;
+  }
+  try {
+    const plan = await api("/api/write-plan", { method: "POST", body: { point, value } });
+    if (form.elements.value.value.trim() !== raw) return;
+    note.hidden = false;
+    note.textContent = plan.text;
+  } catch (error) {
+    if (form.elements.value.value.trim() !== raw) return;
+    note.hidden = false;
+    note.textContent = error.message;
+  }
 }
 
 let lastSocketMessage = 0;
