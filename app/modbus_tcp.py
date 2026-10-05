@@ -8,6 +8,9 @@ from __future__ import annotations
 import asyncio
 import socket
 import struct
+import time
+
+from app.modbus_serial import parse_rtu, rtu_frame, rtu_response_length
 
 EXCEPTION_TEXT = {
     1: "illegal function",
@@ -170,16 +173,41 @@ async def serve_device(
     return await asyncio.start_server(on_client, host, port)
 
 
+def apply_link(client: "ModbusTcpClient", site: dict) -> bool:
+    """Copy a site's connection onto a client. True when the open socket must be dropped."""
+    framing = "rtu" if site.get("protocol") == "rtu" else "tcp"
+    gap = site.get("inter_frame_ms")
+    if gap is None:
+        gap = 20 if framing == "rtu" else 0
+    reopen = (
+        client.host != site["modbus_host"]
+        or client.port != int(site["modbus_port"])
+        or client.unit != int(site["unit_id"])
+        or client.timeout != float(site["timeout_s"])
+        or client.framing != framing
+    )
+    client.host = site["modbus_host"]
+    client.port = int(site["modbus_port"])
+    client.unit = int(site["unit_id"])
+    client.timeout = float(site["timeout_s"])
+    client.framing = framing
+    client.inter_frame_s = max(0.0, float(gap) / 1000.0)
+    return reopen
+
+
 class ModbusTcpClient:
     def __init__(self, host: str, port: int, unit: int, timeout: float):
         self.host = host
         self.port = int(port)
         self.unit = int(unit)
         self.timeout = float(timeout)
+        self.framing = "tcp"
+        self.inter_frame_s = 0.0
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._tid = 0
         self._io = asyncio.Lock()
+        self._next_send = 0.0
 
     @property
     def connected(self) -> bool:
@@ -291,27 +319,85 @@ class ModbusTcpClient:
     async def _transact(self, pdu: bytes) -> bytes:
         async with self._io:
             await self.connect()
-            assert self._reader is not None and self._writer is not None
-            self._tid = self._tid + 1 if self._tid < 65535 else 1
-            self._writer.write(_frame(self._tid, self.unit, pdu))
+            await self._pace()
             try:
-                await asyncio.wait_for(self._writer.drain(), self.timeout)
-                transaction, _unit, response = await asyncio.wait_for(
-                    _read_frame(self._reader),
-                    self.timeout,
+                if self.framing == "rtu":
+                    return await self._exchange_rtu(pdu)
+                return await self._exchange_tcp(pdu)
+            finally:
+                self._next_send = time.monotonic() + max(0.0, self.inter_frame_s)
+
+    async def _pace(self) -> None:
+        wait = self._next_send - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    async def _exchange_tcp(self, pdu: bytes) -> bytes:
+        assert self._reader is not None and self._writer is not None
+        self._tid = self._tid + 1 if self._tid < 65535 else 1
+        self._writer.write(_frame(self._tid, self.unit, pdu))
+        try:
+            await asyncio.wait_for(self._writer.drain(), self.timeout)
+            transaction, _unit, response = await asyncio.wait_for(
+                _read_frame(self._reader),
+                self.timeout,
+            )
+        except TimeoutError as exc:
+            await self.close()
+            raise TimeoutError(
+                f"Timed out waiting for Modbus from {self.host}:{self.port}"
+            ) from exc
+        except (asyncio.IncompleteReadError, ConnectionError, OSError) as exc:
+            await self.close()
+            raise ConnectionError(f"Modbus connection to {self.host}:{self.port} dropped") from exc
+        if transaction != self._tid:
+            await self.close()
+            raise ModbusError(3, "Modbus transaction id did not match")
+        return response
+
+    async def _exchange_rtu(self, pdu: bytes) -> bytes:
+        """Modbus RTU frame on a TCP socket, the same framing Modbus Monitor uses for a raw RUT serial tunnel."""
+        assert self._reader is not None and self._writer is not None
+        self._writer.write(rtu_frame(bytes([self.unit]) + pdu))
+        try:
+            await asyncio.wait_for(self._writer.drain(), self.timeout)
+            return await asyncio.wait_for(self._read_rtu_response(), self.timeout)
+        except TimeoutError as exc:
+            await self.close()
+            raise TimeoutError(
+                f"Timed out waiting for RTU over TCP from {self.host}:{self.port}"
+            ) from exc
+        except (asyncio.IncompleteReadError, ConnectionError, OSError) as exc:
+            await self.close()
+            raise ConnectionError(f"RTU over TCP connection to {self.host}:{self.port} dropped") from exc
+
+    async def _read_rtu_response(self) -> bytes:
+        assert self._reader is not None
+        buf = bytearray()
+        while True:
+            expected = rtu_response_length(buf)
+            if expected is None:
+                if len(buf) >= 3:
+                    await self.close()
+                    raise ModbusError(3, "Modbus RTU response could not be framed")
+                buf.extend(await self._reader.readexactly(1))
+                continue
+            if expected > 256:
+                await self.close()
+                raise ModbusError(3, "Modbus RTU response is longer than a legal frame")
+            missing = expected - len(buf)
+            if missing > 0:
+                buf.extend(await self._reader.readexactly(missing))
+            parsed = parse_rtu(bytes(buf))
+            if not parsed or not parsed.get("ok"):
+                await self.close()
+                raise ModbusError(3, "Modbus RTU response failed the CRC check")
+            if parsed["unit"] != self.unit:
+                raise ModbusError(
+                    3,
+                    f"RTU response was from unit {parsed['unit']}, expected {self.unit}",
                 )
-            except TimeoutError as exc:
-                await self.close()
-                raise TimeoutError(
-                    f"Timed out waiting for Modbus from {self.host}:{self.port}"
-                ) from exc
-            except (asyncio.IncompleteReadError, ConnectionError, OSError) as exc:
-                await self.close()
-                raise ConnectionError(f"Modbus connection to {self.host}:{self.port} dropped") from exc
-            if transaction != self._tid:
-                await self.close()
-                raise ModbusError(3, "Modbus transaction id did not match")
-            return response
+            return bytes(parsed["pdu"])
 
     def _raise_function(self, response: bytes, function: int) -> None:
         if response and response[0] == (function | 0x80) and len(response) > 1:

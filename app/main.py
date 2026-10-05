@@ -13,12 +13,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.decode import engineering_from_raw, format_value
+from app.decode import describe_write, engineering_from_raw, format_value
 from app.mapper import mapper
 from app.monitor import Monitor, probe_site
 from app.paths import ROOT
 from app.store import (
     add_point,
+    apply_one_compressor,
     apply_template,
     clear_vpn_config,
     create_site,
@@ -217,6 +218,14 @@ def post_template(site_id: str):
         raise HTTPException(404, "Site not found") from exc
 
 
+@app.post("/api/sites/{site_id}/profile/one-compressor")
+def post_one_compressor(site_id: str):
+    try:
+        return apply_one_compressor(site_id)
+    except KeyError as exc:
+        raise HTTPException(404, "Site not found") from exc
+
+
 @app.get("/api/sites/{site_id}/export")
 def get_export(site_id: str):
     try:
@@ -232,6 +241,15 @@ def post_import(site_id: str, body: dict):
     except KeyError as exc:
         raise HTTPException(404, "Site not found") from exc
     except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/write-plan")
+def write_plan(body: dict):
+    try:
+        point = normalize_point(body.get("point") or {})
+        return describe_write(point, body.get("value"))
+    except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
 

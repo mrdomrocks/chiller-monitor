@@ -8,6 +8,7 @@ from app.blocks import plan_reads
 from app.blocks import span_for
 from app.decode import (
     decode_registers,
+    describe_write,
     encode_registers,
     encode_string,
     engineering_from_raw,
@@ -92,3 +93,49 @@ def test_chiller_name_is_text_and_blank_when_unprogrammed():
 def test_negative_int16_roundtrip():
     encoded = encode_registers(-50, "int16", "ABCD")
     assert decode_registers(encoded, "int16", "ABCD") == -50
+
+
+def _point(point_id):
+    return next(item for item in default_points() if item["id"] == point_id)
+
+
+def test_float_setpoint_is_two_registers():
+    point = _point("setpoint")
+    capacity = _point("capacity")
+    assert point["dtype"] == "float32"
+    assert span_for(point).count == 2
+    assert span_for(point).address == 2
+    assert span_for(capacity).address == 9
+    plan = describe_write(point, 7.5)
+    assert plan["function"] == 16
+    assert plan["address"] == 2
+    assert plan["registers"] == [16624, 0]
+    assert "IEEE 754" in plan["text"]
+    assert "ABCD" in plan["text"]
+    assert "Function 16" in plan["text"]
+    assert "40003 is protocol address 2." in plan["text"]
+    assert "40003 = 16624 (0x40F0)" in plan["text"]
+    assert "40004 = 0 (0x0000)" in plan["text"]
+
+
+def test_cdab_writes_the_low_word_first():
+    point = {**_point("setpoint"), "byte_order": "CDAB"}
+    plan = describe_write(point, 7.5)
+    assert plan["registers"] == [0, 16624]
+    assert "CDAB swaps the two words" in plan["text"]
+    assert "40003 = 0 (0x0000)" in plan["text"]
+    assert "40004 = 16624 (0x40F0)" in plan["text"]
+
+
+def test_scaled_integer_is_not_described_as_a_float():
+    plan = describe_write(_point("chw_supply"), 7.5)
+    assert plan["function"] == 6
+    assert plan["registers"] == [75]
+    assert "not as a float" in plan["text"]
+    assert "Register = (7.5 − 0) / 0.1 = 75." in plan["text"]
+    assert "40001 = 75 (0x004B)" in plan["text"]
+
+
+def test_write_plan_rejects_a_setpoint_outside_the_limit():
+    with pytest.raises(ValueError, match="minimum"):
+        describe_write(_point("setpoint"), 3)

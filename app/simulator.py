@@ -255,4 +255,44 @@ class ChillerSimulator:
             values[f"comp_{index}_load"] = load
             values[f"comp_{index}_run"] = running
         values["compressor"] = any(running for _load, running in staged)
+        roles = {
+            "supply_temp": supply,
+            "return_temp": supply + 5.0,
+            "setpoint": setpoint,
+            "capacity": capacity,
+            "condenser_in": cond_in,
+            "condenser_out": cond_in + 5.0,
+            "flow": values["flow"],
+            "pressure": values["pressure"],
+            "compressor": values["compressor"],
+            "evap_pump": True,
+            "alarm": values["general_alarm"],
+            "compressor_count": count,
+            "chiller_name": values.get("chiller_name", ""),
+        }
+        for index, (load, running) in enumerate(staged, start=1):
+            roles[f"comp_{index}_load"] = load
+            roles[f"comp_{index}_run"] = running
+        try:
+            bindings = get_site(self.site_id).get("bindings") or {}
+        except KeyError:
+            bindings = {}
+        for role, point_id in bindings.items():
+            if point_id and role in roles and point_id in by_id:
+                values[point_id] = roles[role]
+        if enabled:
+            values.setdefault("unit_active_status", 2)
+        else:
+            values["unit_active_status"] = 0
+        for point_id, sample in {
+            "comp_1_suction_pressure": 45,
+            "comp_1_discharge_pressure": 180,
+            "fan_output": 7,
+            "circuit_1_superheat": 6,
+            "circuit_1_eev_opening": 42,
+            "comp_1_running_current": 8,
+            "pump_running_current": 3,
+        }.items():
+            if point_id in by_id and point_id not in values:
+                values[point_id] = sample
         paint(self.device, points, values)

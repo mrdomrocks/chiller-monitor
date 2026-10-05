@@ -1,4 +1,4 @@
-"""One live session: Modbus TCP on the laptop's current network."""
+"""One live session: Modbus TCP, or RTU over TCP, on the laptop's current network."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from copy import deepcopy
 
 from app.blocks import plan_reads
 from app.decode import engineering_from_raw, encode_numeric, format_value, in_alarm, wire_bool
-from app.modbus_tcp import ModbusTcpClient
+from app.modbus_tcp import ModbusTcpClient, apply_link
 from app.simulator import ChillerSimulator
 from app.store import DEMO_ID, DEMO_SIZES, ensure_demo, ensure_sized_demo, get_site, is_demo_site, sized_demo_id
 
@@ -77,6 +77,7 @@ class Monitor:
                 site["unit_id"],
                 site["timeout_s"],
             )
+            apply_link(self.client, site)
             self._last_good = time.monotonic()
             self._task = asyncio.create_task(self._run(), name="chiller-poll")
             self._publish(self._connecting(site))
@@ -187,17 +188,8 @@ class Monitor:
         except KeyError:
             self._stop.set()
             return
-        if (
-            client.host != site["modbus_host"]
-            or client.port != int(site["modbus_port"])
-            or client.unit != int(site["unit_id"])
-            or client.timeout != float(site["timeout_s"])
-        ):
+        if apply_link(client, site):
             await client.close()
-            client.host = site["modbus_host"]
-            client.port = int(site["modbus_port"])
-            client.unit = int(site["unit_id"])
-            client.timeout = float(site["timeout_s"])
         link_timeout = float(site.get("link_timeout_s", 30))
         if self._last_good and time.monotonic() - self._last_good > link_timeout:
             await client.close()
@@ -257,12 +249,14 @@ class Monitor:
                     values[span.point_id] = _stale(self._last.get(span.point_id), exc)
 
         good = any(item["quality"] == "good" for item in values.values())
+        protocol = "rtu" if site.get("protocol") == "rtu" else "tcp"
+        via = "RTU over TCP" if protocol == "rtu" else "Modbus TCP"
         if errors and not good:
             state, detail = "error", errors[0]
         elif errors:
             state, detail = "polling", "Partial read: " + errors[0]
         else:
-            state, detail = "polling", f"Unit {site['unit_id']}"
+            state, detail = "polling", f"{via}, unit {site['unit_id']}"
         if good:
             self._last_good = time.monotonic()
         previous_vpn = self._snap.get("vpn") or {"state": "down", "detail": ""}
@@ -278,6 +272,7 @@ class Monitor:
                     "host": site["modbus_host"],
                     "port": site["modbus_port"],
                     "unit_id": site["unit_id"],
+                    "protocol": protocol,
                 },
                 "polled_at": int(time.time() * 1000),
                 "rtt_ms": round(rtt, 1),
@@ -316,6 +311,8 @@ class Monitor:
             await simulator.stop()
 
     def _connecting(self, site: dict) -> dict:
+        protocol = "rtu" if site.get("protocol") == "rtu" else "tcp"
+        via = "RTU over TCP" if protocol == "rtu" else "Modbus TCP"
         return {
             "site_id": site["id"],
             "demo": is_demo_site(site["id"]) and self._sim is not None,
@@ -323,10 +320,11 @@ class Monitor:
             "vpn": {"state": "skipped", "detail": "Using this laptop's current network."},
             "modbus": {
                 "state": "connecting",
-                "detail": "Opening Modbus TCP",
+                "detail": f"Opening {via}",
                 "host": site["modbus_host"],
                 "port": site["modbus_port"],
                 "unit_id": site["unit_id"],
+                "protocol": protocol,
             },
             "polled_at": None,
             "rtt_ms": None,
@@ -435,6 +433,7 @@ async def probe_site(site: dict) -> dict:
         return {"tcp": True, "modbus": False, "detail": "TCP port is open, but no points are enabled"}
     point = sorted(enabled, key=lambda item: (item["sort"], item["name"]))[0]
     client = ModbusTcpClient(site["modbus_host"], site["modbus_port"], site["unit_id"], site["timeout_s"])
+    apply_link(client, site)
     try:
         from app.blocks import span_for
 

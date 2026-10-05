@@ -48,3 +48,44 @@ def test_one_compressor_profile_imports(tmp_path, monkeypatch):
     name = next(point for point in stored["points"] if point["id"] == "chiller_name")
     used = {point["address_number"] for point in imported["points"]}
     assert name["address_number"] not in used
+    assert name["address_number"] >= 40100
+
+
+def test_single_compressor_demo_lists_every_sheet_register(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHILLER_DATA", str(tmp_path))
+    from app.store import ensure_sized_demo, list_sites
+
+    site = ensure_sized_demo(1, 1502)
+    by_id = {point["id"]: point for point in site["points"]}
+    assert by_id["water_outlet"]["address_number"] == 40003
+    assert by_id["evaporator_outlet_temp"]["address_number"] == 40004
+    assert by_id["comp_1_suction_pressure"]["address_number"] == 40033
+    assert by_id["fan_output"]["address_number"] == 40048
+    assert by_id["circuit_1_superheat"]["address_number"] == 40067
+    assert by_id["circuit_1_eev_opening"]["address_number"] == 40069
+    assert by_id["valve_4_opening"]["address_number"] == 40078
+    assert "chw_supply" not in by_id
+    sheet = {point["address_number"] for point in site["points"] if point["id"] != "chiller_name"}
+    for gap in (40027, 40030, 40031, 40032, 40042, 40047, 40049, 40055):
+        assert gap not in sheet
+    again = ensure_sized_demo(1, 1502)
+    assert sum(point["id"] == "water_outlet" for point in again["points"]) == 1
+
+    two = ensure_sized_demo(2, 1502)
+    assert any(point["id"] == "chw_supply" for point in two["points"])
+    assert all(point["id"] != "water_outlet" for point in two["points"])
+
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        created = client.post("/api/sites", json={"name": "Sheet"}).json()
+        loaded = client.post(f"/api/sites/{created['id']}/profile/one-compressor")
+        assert loaded.status_code == 200
+        points = loaded.json()["points"]
+        assert any(point["id"] == "water_outlet" and point["address_number"] == 40003 for point in points)
+        assert any(point["address_number"] == 40078 for point in points)
+
+    list_sites()
+    listed = next(item for item in list_sites() if item["id"] == "demo-1")
+    assert any(point["id"] == "fan_output" for point in listed["points"])

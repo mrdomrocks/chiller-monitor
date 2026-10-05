@@ -15,7 +15,7 @@ from app.decode import (
     ORDERS,
     wire_address,
 )
-from app.paths import data_dir, vpn_dir
+from app.paths import ROOT, data_dir, vpn_dir
 from app.template import ROLES, default_bindings, default_points
 
 DEMO_ID = "demo"
@@ -233,6 +233,12 @@ def _connection_fields(raw: dict, current: dict | None = None) -> dict:
     link_timeout = float(raw.get("link_timeout_s", current.get("link_timeout_s", 30)))
     if not 1 <= link_timeout <= 120:
         raise ValueError("Link timeout must be between 1 s and 120 s")
+    protocol = str(raw.get("protocol", current.get("protocol", "tcp")) or "tcp")
+    if protocol not in ("tcp", "rtu"):
+        raise ValueError("Protocol must be Modbus TCP or RTU over TCP")
+    inter_frame = int(raw.get("inter_frame_ms", current.get("inter_frame_ms", 20 if protocol == "rtu" else 0)))
+    if not 0 <= inter_frame <= 10000:
+        raise ValueError("Inter-frame delay must be between 0 ms and 10000 ms")
     return {
         "name": name,
         "location": str(raw.get("location", current.get("location", "")))[:120],
@@ -250,6 +256,8 @@ def _connection_fields(raw: dict, current: dict | None = None) -> dict:
         "retries": retries,
         "link_timeout_s": link_timeout,
         "poll_ms": poll,
+        "protocol": protocol,
+        "inter_frame_ms": inter_frame,
     }
 
 
@@ -296,20 +304,20 @@ def vpn_config_path(site: dict):
     return path
 
 
-def _name_address(site: dict) -> int:
+def _name_address(site: dict, start: int = 40021) -> int:
     used: set[int] = set()
     widths = {"float64": 4, "float32": 2, "uint32": 2, "int32": 2, "string": 8}
     for point in site["points"]:
         if point.get("function") != "holding" or point.get("addressing", "modicon") != "modicon":
             continue
-        start = int(point["address_number"])
+        origin = int(point["address_number"])
         for offset in range(widths.get(point.get("dtype"), 1)):
-            used.add(start + offset)
-    address = 40021
+            used.add(origin + offset)
+    address = start
     while any((address + offset) in used for offset in range(8)):
         address += 1
         if address > 49990:
-            return 40021
+            return start
     return address
 
 
@@ -317,14 +325,16 @@ def _ensure_chiller_name(site: dict) -> bool:
     """Give an older site a text point for the plant heading without replacing its map."""
     changed = False
     if not any(point["id"] == "chiller_name" for point in site["points"]):
+        # Keep the name off the controller sheet. That list ends at 40078 and leaves gaps on purpose.
+        name_at = 40100 if any(point.get("id") == "water_outlet" for point in site["points"]) else 40021
         site["points"].append(
             normalize_point(
                 {
                     "id": "chiller_name",
                     "name": "Chiller name",
                     "group": "Identity",
-                    "notes": "ASCII text, two characters per register. The plant heading uses this when it is not blank. An empty register shows as Chiller.",
-                    "address_number": _name_address(site),
+                    "notes": "ASCII text, two characters per register. The plant heading uses this when it is not blank. An empty register shows as Chiller. This point is not in the controller sheet.",
+                    "address_number": _name_address(site, name_at),
                     "dtype": "string",
                     "string_chars": 16,
                     "widget": "hidden",
@@ -343,10 +353,73 @@ def _ensure_chiller_name(site: dict) -> bool:
     return changed
 
 
+def _lock_fitted_count(site: dict) -> None:
+    for point in site["points"]:
+        if point["id"] == "compressor_count":
+            point["writable"] = False
+            point["write_min"] = None
+            point["write_max"] = None
+            point["widget"] = "hidden"
+
+
+def _ensure_demo_catalog(data: dict) -> bool:
+    """Keep the one, two, four, and six compressor demos in the site list."""
+    changed = False
+    for count in DEMO_SIZES:
+        site_id = sized_demo_id(count)
+        if any(site["id"] == site_id for site in data["sites"]):
+            continue
+        found = _new_site(_DEMO_NAMES[count], site_id)
+        found["location"] = "This computer"
+        noun = "compressor" if count == 1 else "compressors"
+        found["notes"] = (
+            f"Simulated chiller with {count} {noun}. "
+            "The fitted-compressor register stays at that count, so the plant page shows that many cards."
+        )
+        found["modbus_host"] = "127.0.0.1"
+        found["modbus_port"] = 1502
+        found["poll_ms"] = 500
+        found["protocol"] = "tcp"
+        found["inter_frame_ms"] = 0
+        found["vpn_mode"] = "none"
+        _fill_missing_template(found)
+        _lock_fitted_count(found)
+        data["sites"].insert(0, found)
+        changed = True
+    return changed
+
+
+def _setpoint_layout(site: dict) -> tuple:
+    points = {point["id"]: point for point in site.get("points") or []}
+    setpoint = points.get("setpoint") or {}
+    capacity = points.get("capacity") or {}
+    return (
+        setpoint.get("dtype"),
+        setpoint.get("address_number"),
+        setpoint.get("scale"),
+        capacity.get("address_number"),
+    )
+
+
 def list_sites() -> list[dict]:
     with _LOCK:
         data = _load()
-        if any(_ensure_chiller_name(site) for site in data["sites"]):
+        changed = _ensure_demo_catalog(data)
+        for site in data["sites"]:
+            if site["id"] == sized_demo_id(1) and _starter_map(site):
+                _apply_one_compressor_map(site)
+                site["notes"] = (
+                    "Simulated chiller with 1 compressor. The register map is the controller sheet: "
+                    "400001–400078, stored as Modicon 40001–40078. Addresses the sheet skips are not listed."
+                )
+                changed = True
+                continue
+            if not is_demo_site(site["id"]):
+                continue
+            before = _setpoint_layout(site)
+            _upgrade_stock_float_setpoint(site)
+            changed = changed or _setpoint_layout(site) != before
+        if changed or any(_ensure_chiller_name(site) for site in data["sites"]):
             _save(data)
         return [public_site(site) for site in data["sites"]]
 
@@ -558,10 +631,47 @@ def apply_template(site_id: str) -> dict:
         return public_site(site)
 
 
+def one_compressor_document() -> dict:
+    path = ROOT / "profiles" / "modbus-1-compressor.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _point_ids(site: dict) -> set[str]:
+    return {point.get("id") for point in site.get("points") or []}
+
+
+def _starter_map(site: dict) -> bool:
+    ids = _point_ids(site)
+    return "chw_supply" in ids and "water_outlet" not in ids
+
+
+def _apply_one_compressor_map(site: dict) -> None:
+    """Replace a site map with every row from the 1-compressor controller sheet."""
+    document = one_compressor_document()
+    site["points"] = [normalize_point(point) for point in document["points"]]
+    site["bindings"] = normalize_bindings(document.get("bindings"), site["points"])
+    site["layout"] = normalize_layout(document.get("layout"), site.get("layout"))
+    if document.get("evap_label"):
+        site["evap_label"] = str(document["evap_label"])[:40]
+    if document.get("cond_label"):
+        site["cond_label"] = str(document["cond_label"])[:40]
+
+
+def apply_one_compressor(site_id: str) -> dict:
+    with _LOCK:
+        data = _load()
+        site = _find(data, site_id)
+        _apply_one_compressor_map(site)
+        _save(data)
+        return public_site(site)
+
+
 def _fill_missing_template(site: dict) -> None:
     site["points"] = [point for point in site["points"] if point.get("id") != "cond_pump"]
     if isinstance(site.get("bindings"), dict):
         site["bindings"].pop("cond_pump", None)
+    if "water_outlet" in _point_ids(site):
+        return
     taken = {point["id"] for point in site["points"]}
     for raw in default_points():
         if raw["id"] not in taken:
@@ -573,6 +683,58 @@ def _fill_missing_template(site: dict) -> None:
         if bindings.get(role_id) is None and point_id in ids:
             bindings[role_id] = point_id
     site["bindings"] = bindings
+
+
+def _upgrade_stock_float_setpoint(site: dict) -> None:
+    """Turn the original one-register demo setpoint into a two-register float.
+
+    Only the untouched starter map is changed: int16, scale 0.1, holding 40003.
+    Capacity moves from 40004 to 40010 so the float has both registers.
+    """
+    points = {point["id"]: point for point in site["points"]}
+    setpoint = points.get("setpoint")
+    capacity = points.get("capacity")
+    if setpoint is None:
+        return
+    stock = (
+        setpoint.get("dtype") == "int16"
+        and float(setpoint.get("scale", 1)) == 0.1
+        and int(setpoint.get("address_number") or 0) == 40003
+        and setpoint.get("function") == "holding"
+        and (setpoint.get("addressing") or "modicon") == "modicon"
+    )
+    if not stock:
+        return
+    if (
+        capacity is not None
+        and capacity.get("dtype") == "uint16"
+        and capacity.get("function") == "holding"
+        and int(capacity.get("address_number") or 0) == 40004
+    ):
+        used = {
+            int(point["address_number"])
+            for point in site["points"]
+            if point.get("id") != "capacity" and point.get("function") == "holding"
+        }
+        if 40010 not in used:
+            capacity["address_number"] = 40010
+            capacity["notes"] = "Running capacity. Held at 40010 so the float setpoint can use 40003 and 40004."
+    if (
+        capacity is not None
+        and capacity.get("function") == "holding"
+        and int(capacity.get("address_number") or 0) == 40004
+    ):
+        return
+    template = next(point for point in default_points() if point["id"] == "setpoint")
+    setpoint["dtype"] = "float32"
+    setpoint["byte_order"] = "ABCD"
+    setpoint["scale"] = 1.0
+    setpoint["offset"] = 0.0
+    setpoint["decimals"] = 1
+    setpoint["notes"] = template["notes"]
+    setpoint["writable"] = True
+    setpoint["write_min"] = 4
+    setpoint["write_max"] = 15
 
 
 def ensure_sized_demo(count: int, port: int) -> dict:
@@ -597,14 +759,20 @@ def ensure_sized_demo(count: int, port: int) -> dict:
         found["modbus_host"] = "127.0.0.1"
         found["modbus_port"] = int(port)
         found["poll_ms"] = 500
+        found["protocol"] = "tcp"
+        found["inter_frame_ms"] = 0
         found["vpn_mode"] = "none"
-        _fill_missing_template(found)
-        for point in found["points"]:
-            if point["id"] == "compressor_count":
-                point["writable"] = False
-                point["write_min"] = None
-                point["write_max"] = None
-                point["widget"] = "hidden"
+        if count == 1 and (_starter_map(found) or "water_outlet" in _point_ids(found)):
+            if _starter_map(found):
+                _apply_one_compressor_map(found)
+            found["notes"] = (
+                "Simulated chiller with 1 compressor. The register map is the controller sheet: "
+                "400001–400078, stored as Modicon 40001–40078. Addresses the sheet skips are not listed."
+            )
+        elif "water_outlet" not in _point_ids(found):
+            _fill_missing_template(found)
+            _upgrade_stock_float_setpoint(found)
+        _lock_fitted_count(found)
         _save(data)
         return deepcopy(found)
 
@@ -623,13 +791,18 @@ def ensure_demo(port: int) -> dict:
             found["modbus_host"] = "127.0.0.1"
             found["modbus_port"] = int(port)
             found["poll_ms"] = 500
+            found["protocol"] = "tcp"
+            found["inter_frame_ms"] = 0
             found["vpn_mode"] = "none"
             data["sites"].insert(0, found)
         else:
             found["modbus_host"] = "127.0.0.1"
             found["modbus_port"] = int(port)
+            found["protocol"] = "tcp"
+            found["inter_frame_ms"] = 0
             found["vpn_mode"] = "none"
         _fill_missing_template(found)
+        _upgrade_stock_float_setpoint(found)
         for point in found["points"]:
             if point["id"] == "compressor_count":
                 point["writable"] = True

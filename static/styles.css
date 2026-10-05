@@ -387,6 +387,15 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
 .lamp-card.on { border-color: var(--ok); }
 .lamp-card.alarm-on { border-color: var(--alarm); background: #fdecea; color: #7f1d1d; }
 .control form, .write-row { display: flex; gap: 8px; margin-top: 8px; }
+.write-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.write-form .write-row { margin-top: 0; }
+.wire-note {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: "Liberation Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
 .control input { width: 100%; }
 .toggle { display: flex; gap: 6px; margin-top: 8px; }
 .toggle button.selected { border-color: var(--brand); color: var(--brand); }

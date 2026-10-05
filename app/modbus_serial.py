@@ -142,6 +142,26 @@ def _parsed(body: bytes, raw: bytes) -> dict:
     }
 
 
+def rtu_response_length(buf: bytes | bytearray) -> int | None:
+    """Length of one RTU response, once its header says how long the frame is.
+
+    Read responses carry a byte count. Write responses and exceptions are fixed
+    length. This is the response a client reads, not a request on the wire.
+    """
+    if len(buf) < 2:
+        return None
+    function = buf[1]
+    if function & 0x80:
+        return 5
+    if function in (1, 2, 3, 4):
+        if len(buf) < 3:
+            return None
+        return 3 + buf[2] + 2
+    if function in (5, 6, 15, 16):
+        return 8
+    return None
+
+
 def parse_rtu(frame: bytes) -> dict | None:
     if len(frame) < 4 or len(frame) > 256:
         return None
