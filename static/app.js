@@ -229,7 +229,7 @@ function render() {
     main.innerHTML = `
       <section class="welcome">
         <h1>Watch a chiller through the RUT</h1>
-        <p>Join the chiller network on this laptop, then Chiller Monitor opens Modbus TCP to the controller. On site that is the RUT Wi-Fi. Away from site, use the laptop’s existing remote connection first. Customise display on the plant page chooses what the HMI shows. The register map holds addresses and scaling.</p>
+        <p>Join the chiller network on this laptop, then Chiller Monitor opens the same Modbus socket Modbus Monitor uses. Modbus TCP is for the RUT’s translating gateway. RTU over TCP is for a raw serial-over-IP tunnel. Customise display on the plant page chooses what the HMI shows. The register map holds addresses and scaling.</p>
         <div class="actions">
           <button class="primary" type="button" data-action="demo">Start the demo chiller</button>
           <button type="button" data-action="add-site">Create a site</button>
@@ -283,7 +283,7 @@ function renderPlant(main) {
     <div class="plant-head">
       <div>
         <h1 id="plantTitle">${esc(plantTitle())}</h1>
-        <p>${esc(site.name)} · ${esc(site.location || "Location not set")} · unit ${esc(site.unit_id)} · ${esc(site.modbus_host)}:${esc(site.modbus_port)}</p>
+        <p>${esc(site.name)} · ${esc(site.location || "Location not set")} · unit ${esc(site.unit_id)} · ${esc(protocolLabel(site.protocol))} · ${esc(site.modbus_host)}:${esc(site.modbus_port)}</p>
       </div>
       <div class="plant-tools">
         <p class="muted" id="commsDetail"></p>
@@ -489,7 +489,7 @@ function profileHtml() {
     <div class="section-head">
       <div>
         <h2>Register map</h2>
-        <p class="muted" id="profileLead">Connect to read these points from the chiller over Modbus TCP.</p>
+        <p class="muted" id="profileLead">Connect to read these points from the chiller over ${esc(protocolLabel(S.site.protocol))}.</p>
       </div>
     </div>
     ${groups}
@@ -759,15 +759,16 @@ function paintLive() {
   const lead = document.getElementById("profileLead");
   if (lead && S.site) {
     if (!S.live || S.live.site_id !== S.siteId) {
-      lead.textContent = "Connect to read these points from the chiller over Modbus TCP.";
+      lead.textContent = `Connect to read these points from the chiller over ${protocolLabel(S.site.protocol)}.`;
     } else if (S.live.modbus.state === "polling") {
-      lead.textContent = `Live from ${S.live.modbus.host}:${S.live.modbus.port}, unit ${S.live.modbus.unit_id}. Each tile follows a point on this register map.`;
+      const via = protocolLabel(S.live.modbus.protocol);
+      lead.textContent = `Live from ${S.live.modbus.host}:${S.live.modbus.port} over ${via}, unit ${S.live.modbus.unit_id}. Each tile follows a point on this register map.`;
     } else if (S.live.modbus.state === "connecting") {
-      lead.textContent = "Opening Modbus TCP…";
+      lead.textContent = `Opening ${protocolLabel(S.live.modbus.protocol)}…`;
     } else if (S.live.modbus.state === "error") {
       lead.textContent = S.live.modbus.detail || "The controller did not answer.";
     } else {
-      lead.textContent = "Connect to read these points from the chiller over Modbus TCP.";
+      lead.textContent = `Connect to read these points from the chiller over ${protocolLabel(S.site.protocol)}.`;
     }
   }
   const banner = document.getElementById("alarmBanner");
@@ -1032,25 +1033,38 @@ function collectPoint(form) {
   };
 }
 
+function protocolLabel(protocol) {
+  return protocol === "rtu" ? "RTU over TCP" : "Modbus TCP";
+}
+
 function renderLink(main) {
   const site = S.site;
+  const protocol = site.protocol === "rtu" ? "rtu" : "tcp";
+  const interFrame = site.inter_frame_ms ?? (protocol === "rtu" ? 20 : 0);
   main.innerHTML = `
     <section class="panel">
-      <h2>Modbus TCP</h2>
-      <p class="help">Same connection Modbus Monitor uses. This program does not log into a VPN. Put the laptop on the network first, then enter the controller’s IP, port 502, and unit id.</p>
-      <p class="help">On site, join the RUT Wi-Fi or the site LAN. The address is the RUT LAN address when it is gatewaying the chiller, or the chiller’s own address when the controller speaks Modbus TCP. Away from site, connect the laptop over the internet or mobile data the way you already do, then use that same IP. Connect reopens the socket if the Wi-Fi drops.</p>
+      <h2>Connection</h2>
+      <p class="help">Same connection Modbus Monitor uses. This program does not log into the RUT. Join the network on this laptop first, then open the socket.</p>
+      <p class="help">Modbus TCP is for RutOS Services → Modbus → Modbus TCP over Serial Gateway. The router turns each request into RTU on RS485. RTU over TCP is for Services → Serial Utilities → Over IP, with Raw mode on: the router forwards the serial bytes unchanged, and this program sends the RTU frames Modbus Monitor sends when Interface is TCP and Protocol is RTU.</p>
+      <p class="help">On site, join the RUT Wi-Fi or the site LAN. The address is the RUT when it is gatewaying the chiller, or the controller when it already speaks Modbus TCP. Away from site, bring up the laptop VPN or RMS path first. A socket that stays quiet for the link timeout is opened again.</p>
       <form id="linkForm">
         <div class="form-grid">
           <label>Site name <input name="name" required maxlength="80" value="${esc(site.name)}"></label>
           <label>Location <input name="location" maxlength="120" value="${esc(site.location)}"></label>
+          <label>Protocol <select name="protocol">
+            <option value="tcp"${protocol === "tcp" ? " selected" : ""}>Modbus TCP</option>
+            <option value="rtu"${protocol === "rtu" ? " selected" : ""}>RTU over TCP</option>
+          </select></label>
           <label>IP address <input name="modbus_host" required value="${esc(site.modbus_host)}"></label>
           <label>Port <input name="modbus_port" type="number" min="1" max="65535" value="${esc(site.modbus_port)}"></label>
           <label>Unit id <input name="unit_id" type="number" min="0" max="255" value="${esc(site.unit_id)}"></label>
           <label>Response timeout (s) <input name="timeout_s" type="number" min="0.2" max="30" step="0.1" value="${esc(site.timeout_s)}"></label>
           <label>Retries <input name="retries" type="number" min="1" max="10" step="1" value="${esc(site.retries ?? 3)}"></label>
           <label>Link timeout (s) <input name="link_timeout_s" type="number" min="1" max="120" step="1" value="${esc(site.link_timeout_s ?? 30)}"></label>
+          <label>Inter-frame (ms) <input name="inter_frame_ms" type="number" min="0" max="10000" step="1" value="${esc(interFrame)}"></label>
           <label>Poll (ms) <input name="poll_ms" type="number" min="200" max="60000" step="100" value="${esc(site.poll_ms)}"></label>
         </div>
+        <p class="help">Inter-frame is the pause between requests. Modbus Monitor’s default is 20 ms, which gives the RUT time to turn the RS485 line around.</p>
         <label>Notes <textarea name="notes">${esc(site.notes)}</textarea></label>
         <div class="form-actions" style="margin-top:12px">
           <button class="primary" type="button" data-action="live-hmi">Start live HMI</button>
@@ -1080,6 +1094,8 @@ function linkPayload(form) {
     retries: Number(value("retries")),
     link_timeout_s: Number(value("link_timeout_s")),
     poll_ms: Number(value("poll_ms")),
+    protocol: value("protocol") === "rtu" ? "rtu" : "tcp",
+    inter_frame_ms: Number(value("inter_frame_ms")),
   };
 }
 
@@ -1330,6 +1346,11 @@ async function onSubmit(event) {
 
 async function onChange(event) {
   const target = event.target;
+  if (target.name === "protocol" && target.form && target.form.id === "linkForm") {
+    const inter = target.form.elements.inter_frame_ms;
+    if (target.value === "rtu" && inter && Number(inter.value) === 0) inter.value = 20;
+    return;
+  }
   if (target.id === "mapperMapping" || target.id === "mapperReplace") {
     await guard(async () => {
       S.mapper = await api("/api/mapper/settings", {

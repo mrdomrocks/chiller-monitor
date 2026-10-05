@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.monitor import Monitor
 from app.simulator import stage_loads
-from app.store import _load, _save, create_site, ensure_demo, get_site, update_point
+from app.store import _load, _save, create_site, ensure_demo, get_site, update_point, update_site
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +27,18 @@ def test_create_site_strips_password_and_rejects_bad_area():
     assert site["bindings"]["comp_6_run"] == "comp_6_run"
     with pytest.raises(ValueError):
         update_point(site["id"], "chw_supply", {**get_site(site["id"])["points"][0], "function": "coil", "address_number": 40001})
+
+
+def test_rtu_over_tcp_protocol_is_saved_with_the_site():
+    site = create_site("Tunnel")
+    assert site["protocol"] == "tcp"
+    assert site["inter_frame_ms"] == 0
+    saved = update_site(site["id"], {"name": site["name"], "protocol": "rtu", "inter_frame_ms": 20})
+    assert saved["protocol"] == "rtu"
+    assert saved["inter_frame_ms"] == 20
+    assert get_site(site["id"])["protocol"] == "rtu"
+    with pytest.raises(ValueError):
+        update_site(site["id"], {"name": site["name"], "protocol": "ascii"})
 
 
 def test_http_creates_and_updates_a_point():

@@ -1,6 +1,6 @@
 # RUT Chiller Monitor
 
-Local plant page for a water chiller on a Teltonika RUT. The laptop joins the network first. The app then opens Modbus TCP to the controller IP, the same way Modbus Monitor does, and shows an at-a-glance HMI in its own window. **Customise display** on the plant page chooses which sections are shown, which point fills each tile, and how each point is drawn. The register map — addresses, types, scaling, alarms, and which points can be written — is edited in the app.
+Local plant page for a water chiller on a Teltonika RUT. The laptop joins the network first. The app then opens the same socket Modbus Monitor uses — Modbus TCP, or Modbus RTU over TCP — and shows an at-a-glance HMI in its own window. **Customise display** on the plant page chooses which sections are shown, which point fills each tile, and how each point is drawn. The register map — addresses, types, scaling, alarms, and which points can be written — is edited in the app.
 
 ## Screenshots
 
@@ -44,9 +44,12 @@ A push to `main` builds a Windows installer and a Fedora/Nobara RPM, then publis
 
 ## Connection
 
-1. Put the chiller on the RUT. A controller with RS485 uses a serial model (for example a RUT956) and RutOS **Services → Modbus** as a Modbus TCP gateway. A controller that already speaks Modbus TCP only needs to be on the RUT LAN.
+1. Put the chiller on the RUT. A controller with RS485 uses a serial model (for example a RUT956). Two RutOS services match the two protocols in Modbus Monitor:
+   - **Services → Modbus → Modbus TCP over Serial Gateway** translates Modbus TCP into RTU. In this app choose **Modbus TCP**.
+   - **Services → Serial Utilities → Over IP**, Raw mode on, protocol TCP, forwards the serial bytes unchanged. In this app choose **RTU over TCP**, the same framing Modbus Monitor uses when Interface is TCP and Protocol is RTU.
+   A controller that already speaks Modbus TCP only needs to be on the RUT LAN. Choose **Modbus TCP** and the controller’s own address.
 2. On site, join the RUT Wi-Fi or the site LAN from the laptop. Away from site, bring up the remote route you already use (the laptop VPN, RMS, or mobile data path) before opening this app.
-3. Create a site and set the IP address, port 502, and the controller unit id. Connect. The program polls that socket and opens a new one if the link drops.
+3. Create a site and set the protocol, IP address, port, and the controller unit id. Connect. The program polls that socket, pauses for the inter-frame gap between requests, and opens a new socket if the link stays quiet past the link timeout.
 4. Open **Register map** and match every point to the controller manual: area, address, data type, byte order, scale, and bit. Mark setpoints and coils as writable if the engineer is allowed to change them.
 5. On **Connection**, choose **Start live HMI**. The plant page reads every enabled point on the register map over Modbus TCP and draws it from the live values. Points already placed on the water diagram, compressor cards, status lamps, or writable outputs stay there. Everything else — including a profile that does not use the chilled-water tiles — appears under **Register map**, grouped as it is on the map.
 6. Choose **Customise display** to show or hide the diagram, compressors, readings, status lamps, writable outputs, the register-map faceplate, and the live table. Pick the point for each diagram tile, the diagram labels, and whether a point is drawn as a value, gauge, status lamp, alarm, or hidden.

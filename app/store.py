@@ -218,6 +218,12 @@ def _connection_fields(raw: dict, current: dict | None = None) -> dict:
     link_timeout = float(raw.get("link_timeout_s", current.get("link_timeout_s", 30)))
     if not 1 <= link_timeout <= 120:
         raise ValueError("Link timeout must be between 1 s and 120 s")
+    protocol = str(raw.get("protocol", current.get("protocol", "tcp")) or "tcp")
+    if protocol not in ("tcp", "rtu"):
+        raise ValueError("Protocol must be Modbus TCP or RTU over TCP")
+    inter_frame = int(raw.get("inter_frame_ms", current.get("inter_frame_ms", 20 if protocol == "rtu" else 0)))
+    if not 0 <= inter_frame <= 10000:
+        raise ValueError("Inter-frame delay must be between 0 ms and 10000 ms")
     return {
         "name": name,
         "location": str(raw.get("location", current.get("location", "")))[:120],
@@ -235,6 +241,8 @@ def _connection_fields(raw: dict, current: dict | None = None) -> dict:
         "retries": retries,
         "link_timeout_s": link_timeout,
         "poll_ms": poll,
+        "protocol": protocol,
+        "inter_frame_ms": inter_frame,
     }
 
 
@@ -571,11 +579,15 @@ def ensure_demo(port: int) -> dict:
             found["modbus_host"] = "127.0.0.1"
             found["modbus_port"] = int(port)
             found["poll_ms"] = 500
+            found["protocol"] = "tcp"
+            found["inter_frame_ms"] = 0
             found["vpn_mode"] = "none"
             data["sites"].insert(0, found)
         else:
             found["modbus_host"] = "127.0.0.1"
             found["modbus_port"] = int(port)
+            found["protocol"] = "tcp"
+            found["inter_frame_ms"] = 0
             found["vpn_mode"] = "none"
         _fill_missing_template(found)
         for point in found["points"]:

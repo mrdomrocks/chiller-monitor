@@ -528,6 +528,8 @@ class Mapper:
                     "modbus_port": self.replay_port,
                     "unit_id": int(unit),
                     "poll_ms": 500,
+                    "protocol": "tcp",
+                    "inter_frame_ms": 0,
                 },
             )
         if recording_id:
@@ -570,6 +572,8 @@ class Mapper:
                 "modbus_port": self.replay_port,
                 "unit_id": int(unit),
                 "poll_ms": 500,
+                "protocol": "tcp",
+                "inter_frame_ms": 0,
                 "notes": "Registers captured from RS-485 and served by the replay emulator on this computer.",
             },
         )
