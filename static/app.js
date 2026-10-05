@@ -1304,28 +1304,17 @@ async function onClick(event) {
       toast("1-compressor list loaded", true);
     });
   } else if (action === "export-readings") {
-    await guard(async () => {
-      const response = await fetch(`/api/sites/${S.site.id}/readings.csv`);
-      const text = await response.text();
-      if (!response.ok) {
-        let message = response.statusText;
-        try {
-          const data = JSON.parse(text);
-          message = data.detail || message;
-        } catch {
-          if (text) message = text;
-        }
-        throw new Error(message);
-      }
-      const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
-      const match = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") || "");
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = match ? match[1] : "readings.csv";
-      link.click();
-      URL.revokeObjectURL(link.href);
-      toast("Readings downloaded", true);
-    });
+    const slug = (S.site.name || "site").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "site";
+    const now = new Date();
+    const pad = (part) => String(part).padStart(2, "0");
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const link = document.createElement("a");
+    link.href = `/api/sites/${S.site.id}/readings.csv`;
+    link.download = `${slug}-readings-${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    toast("Readings downloaded", true);
   } else if (action === "export") {
     await guard(async () => {
       const map = await api(`/api/sites/${S.site.id}/export`);
