@@ -947,7 +947,7 @@ function paintLive() {
         const count = Number(sized[1]);
         const noun = count === 1 ? "compressor" : "compressors";
         flag.textContent = count === 1
-          ? "Demo controller with 1 compressor. A fault is held on so the alarm box shows the registers the controller outputs."
+          ? "Demo controller with 1 compressor. A fault is held on so the alarm box shows the alarm message."
           : `Demo controller with ${count} ${noun}. The plant shows that many compressor cards.`;
       } else {
         flag.textContent = "Demo controller on this computer. Supply temperature alarms above its high limit so the banner can be checked.";
