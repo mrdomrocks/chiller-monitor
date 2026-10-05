@@ -454,7 +454,6 @@ function profileCard(point) {
       <div>
         <strong>${esc(point.name)}</strong>
         <div data-value="${id}">—</div>
-        <div class="muted">${esc(addressLabel(point))}</div>
         <p class="muted profile-detail" data-detail="${id}"></p>
         ${point.writable ? profileWrite(point) : ""}
       </div>
@@ -467,7 +466,7 @@ function profileCard(point) {
     <div class="figure"><b data-value="${id}">—</b><small>${esc(point.unit)}</small></div>
     ${gauge && numeric ? `<div class="bar"><span data-bar="${id}"></span></div>` : ""}
     ${numeric ? `<svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true"><polyline data-spark="${id}" points=""></polyline></svg>` : ""}
-    <div class="profile-meta"><span class="tag" data-quality="${id}">—</span><span class="muted">${esc(addressLabel(point))}</span></div>
+    <div class="profile-meta"><span class="tag" data-quality="${id}">—</span></div>
     <p class="muted profile-detail" data-detail="${id}"></p>
     ${point.writable ? profileWrite(point) : ""}
   </article>`;
@@ -638,7 +637,7 @@ function controlCards() {
 function tableRows() {
   return visiblePoints().map((point) => `
     <tr data-action="edit-point" data-point="${esc(point.id)}">
-      <td>${esc(point.name)}<div class="muted">${esc(point.group)} · ${esc(addressLabel(point))}</div></td>
+      <td>${esc(point.name)}<div class="muted">${esc(point.group)}</div></td>
       <td class="num"><span data-value="${esc(point.id)}">—</span> ${esc(point.unit)}</td>
       <td class="raw" data-raw="${esc(point.id)}">—</td>
       <td><span class="tag" data-quality="${esc(point.id)}">—</span></td>

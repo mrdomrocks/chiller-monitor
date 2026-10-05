@@ -36,7 +36,9 @@ def test_one_compressor_profile_imports(tmp_path, monkeypatch):
     assert imported["bindings"]["compressor"] == "comp_1_running"
     assert imported["bindings"]["comp_1_run"] == "comp_1_running"
     assert imported["bindings"]["evap_pump"] == "pump_running"
-    assert imported["bindings"]["return_temp"] is None
+    assert imported["bindings"]["return_temp"] == "evaporator_outlet_temp"
+    assert by_id["evaporator_outlet_temp"]["name"] == "Return temperature"
+    assert by_id["evaporator_outlet_temp"]["address_number"] == 40004
     assert imported["bindings"]["setpoint"] is None
     assert imported["layout"]["readings"] is False
     assert all(point["function"] == "holding" and not point["writable"] for point in imported["points"])
