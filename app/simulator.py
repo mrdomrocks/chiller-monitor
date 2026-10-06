@@ -224,6 +224,9 @@ class ChillerSimulator:
         limit = 7.6
         if "chw_supply" in by_id and by_id["chw_supply"].get("alarm_high") is not None:
             limit = float(by_id["chw_supply"]["alarm_high"])
+        # The controller sheet has no supply alarm limit. Hold a fault so the
+        # chiller display can show the alarm-message registers the controller outputs.
+        sheet = "water_outlet" in by_id and "chw_supply" not in by_id
         values: dict[str, float | bool] = {
             "chw_supply": supply,
             "chw_return": supply + 5.0,
@@ -234,7 +237,7 @@ class ChillerSimulator:
             "flow": 18 + math.sin(now / 9.0),
             "pressure": 2.3 + math.sin(now / 10.0) * 0.15,
             "evap_pump": True,
-            "general_alarm": supply > limit,
+            "general_alarm": True if sheet else supply > limit,
             "enable": bool(enabled),
             "power": 22 + max(capacity, 0) * 0.45,
         }
@@ -287,6 +290,7 @@ class ChillerSimulator:
         for point_id, sample in {
             "comp_1_suction_pressure": 45,
             "comp_1_discharge_pressure": 180,
+            "press_2_cool_inlet_nor": 24,
             "fan_output": 7,
             "circuit_1_superheat": 6,
             "circuit_1_eev_opening": 42,
@@ -295,4 +299,11 @@ class ChillerSimulator:
         }.items():
             if point_id in by_id and point_id not in values:
                 values[point_id] = sample
+        tripped = bool(values.get("general_alarm"))
+        if tripped and "unit_active_status" in by_id:
+            values["unit_active_status"] = 4
+        if "alarm_message1" in by_id:
+            values["alarm_message1"] = tripped
+        if "alarm_message_9" in by_id:
+            values["alarm_message_9"] = 12 if tripped else 0
         paint(self.device, points, values)

@@ -37,10 +37,14 @@ def test_one_compressor_profile_imports(tmp_path, monkeypatch):
     assert imported["bindings"]["comp_1_run"] == "comp_1_running"
     assert imported["bindings"]["evap_pump"] == "pump_running"
     assert imported["bindings"]["return_temp"] == "evaporator_outlet_temp"
+    assert imported["bindings"]["high_pressure"] == "comp_1_discharge_pressure"
+    assert imported["bindings"]["low_pressure"] == "comp_1_suction_pressure"
+    assert imported["bindings"]["pump_pressure"] == "press_2_cool_inlet_nor"
     assert by_id["evaporator_outlet_temp"]["name"] == "Return temperature"
     assert by_id["evaporator_outlet_temp"]["address_number"] == 40004
     assert imported["bindings"]["setpoint"] is None
     assert imported["layout"]["readings"] is False
+    assert imported["layout"]["faceplate"] is True
     assert all(point["function"] == "holding" and not point["writable"] for point in imported["points"])
     assert 40027 not in {point["address_number"] for point in imported["points"]}
 
@@ -89,3 +93,26 @@ def test_single_compressor_demo_lists_every_sheet_register(tmp_path, monkeypatch
     list_sites()
     listed = next(item for item in list_sites() if item["id"] == "demo-1")
     assert any(point["id"] == "fan_output" for point in listed["points"])
+    assert listed["bindings"]["high_pressure"] == "comp_1_discharge_pressure"
+    assert listed["bindings"]["low_pressure"] == "comp_1_suction_pressure"
+    assert listed["bindings"]["pump_pressure"] == "press_2_cool_inlet_nor"
+
+
+def test_sheet_faceplate_bindings_fill_when_the_keys_are_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHILLER_DATA", str(tmp_path))
+    from app.paths import data_dir
+    from app.store import ensure_sized_demo, list_sites
+
+    ensure_sized_demo(1, 1502)
+    path = data_dir() / "sites.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    demo = next(site for site in stored["sites"] if site["id"] == "demo-1")
+    for role in ("high_pressure", "low_pressure", "pump_pressure"):
+        demo["bindings"].pop(role, None)
+    demo["bindings"]["high_pressure"] = None
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+    listed = next(item for item in list_sites() if item["id"] == "demo-1")
+    assert listed["bindings"]["high_pressure"] is None
+    assert listed["bindings"]["low_pressure"] == "comp_1_suction_pressure"
+    assert listed["bindings"]["pump_pressure"] == "press_2_cool_inlet_nor"
