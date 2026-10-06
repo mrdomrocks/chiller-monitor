@@ -287,10 +287,11 @@ class ChillerSimulator:
             values.setdefault("unit_active_status", 2)
         else:
             values["unit_active_status"] = 0
+        # Bar, inside a normal chiller: suction near 4, discharge near 14, pump near 2.
         for point_id, sample in {
-            "comp_1_suction_pressure": 45,
-            "comp_1_discharge_pressure": 180,
-            "press_2_cool_inlet_nor": 24,
+            "comp_1_suction_pressure": 4,
+            "comp_1_discharge_pressure": 14,
+            "press_2_cool_inlet_nor": 2,
             "fan_output": 7,
             "circuit_1_superheat": 6,
             "circuit_1_eev_opening": 42,

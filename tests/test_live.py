@@ -310,9 +310,9 @@ async def sized_demo_session():
                 assert 5 <= values["water_outlet"]["value"] <= 10
                 assert values["comp_1_running"]["value"] is True
                 assert values["fan_output"]["value"] == 7
-                assert values["comp_1_suction_pressure"]["value"] == 45
-                assert values["comp_1_discharge_pressure"]["value"] == 180
-                assert values["press_2_cool_inlet_nor"]["value"] == 24
+                assert values["comp_1_suction_pressure"]["value"] == 4
+                assert values["comp_1_discharge_pressure"]["value"] == 14
+                assert values["press_2_cool_inlet_nor"]["value"] == 2
                 assert values["general_alarm"]["value"] is True
                 assert values["alarm_message1"]["value"] is True
                 assert values["alarm_message1"]["message"] == "Alarm Message1"
