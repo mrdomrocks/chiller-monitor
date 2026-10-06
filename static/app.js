@@ -114,7 +114,7 @@ function ensureShell() {
   document.getElementById("app").innerHTML = `
     <header class="top">
       <div class="brand">
-        <span class="mark">RUT</span>
+        <img class="mark" src="/static/chiller-monitor.png" alt="Aqua Cooling" width="42" height="42">
         <div>
           <strong>Chiller Monitor</strong>
           <small>Modbus TCP</small>
