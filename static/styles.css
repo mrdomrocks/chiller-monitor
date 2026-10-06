@@ -47,13 +47,10 @@ button { cursor: pointer; }
 .mark {
   width: 42px;
   height: 42px;
-  display: grid;
-  place-items: center;
+  display: block;
   border-radius: 8px;
   background: var(--steel);
-  color: #fff;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  object-fit: cover;
 }
 .top .site-pick { color: rgba(255, 255, 255, 0.9); }
 .top .site-pick select {
