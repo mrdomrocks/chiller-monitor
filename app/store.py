@@ -646,6 +646,13 @@ _SHEET_FACEPLATE = (
     ("low_pressure", "comp_1_suction_pressure"),
     ("pump_pressure", "press_2_cool_inlet_nor"),
 )
+_SHEET_PRESSURE_BAR = {point_id for _role, point_id in _SHEET_FACEPLATE}
+# Placeholder span from the sheet import. A normal chiller sits well inside these.
+_SHEET_PRESSURE_GAUGE = {
+    "comp_1_discharge_pressure": (0.0, 25.0),
+    "comp_1_suction_pressure": (0.0, 10.0),
+    "press_2_cool_inlet_nor": (0.0, 6.0),
+}
 
 
 def _point_ids(site: dict) -> set[str]:
@@ -669,6 +676,44 @@ def _bind_sheet_faceplate(site: dict) -> bool:
         if role not in bindings and point_id in ids:
             bindings[role] = point_id
             changed = True
+    changed = _label_sheet_pressures_bar(site) or changed
+    return _range_sheet_pressures(site) or changed
+
+
+def _label_sheet_pressures_bar(site: dict) -> bool:
+    """Show the sheet's high, low, and pump pressures in bar.
+
+    A blank unit is filled. A unit already saved on the point is left as it is.
+    """
+    if "water_outlet" not in _point_ids(site):
+        return False
+    changed = False
+    for point in site.get("points") or []:
+        if point.get("id") not in _SHEET_PRESSURE_BAR:
+            continue
+        if str(point.get("unit") or "").strip():
+            continue
+        point["unit"] = "bar"
+        changed = True
+    return changed
+
+
+def _range_sheet_pressures(site: dict) -> bool:
+    """Replace the placeholder 0–100 span on the three bar pressures.
+
+    A span already edited on the point is left as it is.
+    """
+    if "water_outlet" not in _point_ids(site):
+        return False
+    changed = False
+    for point in site.get("points") or []:
+        span = _SHEET_PRESSURE_GAUGE.get(point.get("id"))
+        if span is None:
+            continue
+        if float(point.get("gauge_min", 0)) != 0 or float(point.get("gauge_max", 0)) != 100:
+            continue
+        point["gauge_min"], point["gauge_max"] = span
+        changed = True
     return changed
 
 

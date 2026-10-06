@@ -40,6 +40,12 @@ def test_one_compressor_profile_imports(tmp_path, monkeypatch):
     assert imported["bindings"]["high_pressure"] == "comp_1_discharge_pressure"
     assert imported["bindings"]["low_pressure"] == "comp_1_suction_pressure"
     assert imported["bindings"]["pump_pressure"] == "press_2_cool_inlet_nor"
+    assert by_id["comp_1_discharge_pressure"]["unit"] == "bar"
+    assert by_id["comp_1_suction_pressure"]["unit"] == "bar"
+    assert by_id["press_2_cool_inlet_nor"]["unit"] == "bar"
+    assert by_id["comp_1_discharge_pressure"]["gauge_max"] == 25
+    assert by_id["comp_1_suction_pressure"]["gauge_max"] == 10
+    assert by_id["press_2_cool_inlet_nor"]["gauge_max"] == 6
     assert by_id["evaporator_outlet_temp"]["name"] == "Return temperature"
     assert by_id["evaporator_outlet_temp"]["address_number"] == 40004
     assert imported["bindings"]["setpoint"] is None
@@ -116,3 +122,37 @@ def test_sheet_faceplate_bindings_fill_when_the_keys_are_missing(tmp_path, monke
     assert listed["bindings"]["high_pressure"] is None
     assert listed["bindings"]["low_pressure"] == "comp_1_suction_pressure"
     assert listed["bindings"]["pump_pressure"] == "press_2_cool_inlet_nor"
+
+
+def test_blank_sheet_pressures_are_shown_in_bar(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHILLER_DATA", str(tmp_path))
+    from app.paths import data_dir
+    from app.store import ensure_sized_demo, list_sites
+
+    ensure_sized_demo(1, 1502)
+    path = data_dir() / "sites.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    demo = next(site for site in stored["sites"] if site["id"] == "demo-1")
+    for point in demo["points"]:
+        if point["id"] == "comp_1_discharge_pressure":
+            point["unit"] = ""
+            point["gauge_min"] = 0
+            point["gauge_max"] = 100
+        elif point["id"] == "comp_1_suction_pressure":
+            point["unit"] = "kPa"
+            point["gauge_min"] = 0
+            point["gauge_max"] = 40
+        elif point["id"] == "press_2_cool_inlet_nor":
+            point["unit"] = ""
+            point["gauge_min"] = 0
+            point["gauge_max"] = 100
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+    listed = next(item for item in list_sites() if item["id"] == "demo-1")
+    by_id = {point["id"]: point for point in listed["points"]}
+    assert by_id["comp_1_discharge_pressure"]["unit"] == "bar"
+    assert by_id["comp_1_discharge_pressure"]["gauge_max"] == 25
+    assert by_id["comp_1_suction_pressure"]["unit"] == "kPa"
+    assert by_id["comp_1_suction_pressure"]["gauge_max"] == 40
+    assert by_id["press_2_cool_inlet_nor"]["unit"] == "bar"
+    assert by_id["press_2_cool_inlet_nor"]["gauge_max"] == 6
