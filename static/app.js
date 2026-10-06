@@ -385,10 +385,12 @@ function analogTile(roleId, title) {
     </article>`;
   }
   const numeric = point.dtype !== "bool" && point.function !== "coil" && point.function !== "discrete";
+  const pressure = roleId === "high_pressure" || roleId === "low_pressure" || roleId === "pump_pressure";
+  const unit = pressure ? (point.unit || "bar") : point.unit;
   return `<article class="face-tile" data-card="${esc(point.id)}">
     <span class="kicker">${esc(title)}</span>
     <span class="face-point">${esc(point.name)}</span>
-    <div class="figure"><b data-value="${esc(point.id)}">—</b><small>${esc(point.unit)}</small></div>
+    <div class="figure"><b data-value="${esc(point.id)}">—</b><small>${esc(unit)}</small></div>
     ${numeric ? `<div class="bar"><span data-bar="${esc(point.id)}"></span></div>` : ""}
     ${slotSelect(roleId)}
   </article>`;

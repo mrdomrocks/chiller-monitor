@@ -646,6 +646,7 @@ _SHEET_FACEPLATE = (
     ("low_pressure", "comp_1_suction_pressure"),
     ("pump_pressure", "press_2_cool_inlet_nor"),
 )
+_SHEET_PRESSURE_BAR = {point_id for _role, point_id in _SHEET_FACEPLATE}
 
 
 def _point_ids(site: dict) -> set[str]:
@@ -669,6 +670,24 @@ def _bind_sheet_faceplate(site: dict) -> bool:
         if role not in bindings and point_id in ids:
             bindings[role] = point_id
             changed = True
+    return _label_sheet_pressures_bar(site) or changed
+
+
+def _label_sheet_pressures_bar(site: dict) -> bool:
+    """Show the sheet's high, low, and pump pressures in bar.
+
+    A blank unit is filled. A unit already saved on the point is left as it is.
+    """
+    if "water_outlet" not in _point_ids(site):
+        return False
+    changed = False
+    for point in site.get("points") or []:
+        if point.get("id") not in _SHEET_PRESSURE_BAR:
+            continue
+        if str(point.get("unit") or "").strip():
+            continue
+        point["unit"] = "bar"
+        changed = True
     return changed
 
 
