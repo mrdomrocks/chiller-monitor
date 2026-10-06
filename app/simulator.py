@@ -288,9 +288,6 @@ class ChillerSimulator:
         else:
             values["unit_active_status"] = 0
         for point_id, sample in {
-            "comp_1_suction_pressure": 45,
-            "comp_1_discharge_pressure": 180,
-            "press_2_cool_inlet_nor": 24,
             "fan_output": 7,
             "circuit_1_superheat": 6,
             "circuit_1_eev_opening": 42,
@@ -299,6 +296,22 @@ class ChillerSimulator:
         }.items():
             if point_id in by_id and point_id not in values:
                 values[point_id] = sample
+        # These registers stay as raw counts. The HMI applies each point's scale and offset.
+        if "water_outlet" in by_id and "chw_supply" not in by_id:
+            held_raw = {
+                "water_outlet": 8 + round(math.sin(now / 8.0)),
+                "evaporator_outlet_temp": 13 + round(math.sin(now / 10.0)),
+                "comp_1_suction_pressure": 4,
+                "comp_1_discharge_pressure": 14,
+                "press_2_cool_inlet_nor": 2,
+            }
+            for point_id, raw_number in held_raw.items():
+                point = by_id.get(point_id)
+                if point is None:
+                    continue
+                scale = float(point.get("scale") or 1)
+                offset = float(point.get("offset") or 0)
+                values[point_id] = raw_number * scale + offset
         tripped = bool(values.get("general_alarm"))
         if tripped and "unit_active_status" in by_id:
             values["unit_active_status"] = 4
