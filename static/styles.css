@@ -210,23 +210,6 @@ main { padding: 16px 20px 40px; }
   margin-bottom: 12px;
 }
 .customise summary { cursor: pointer; color: var(--brand); margin: 4px 0 10px; }
-.reading-settings {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
-}
-.reading-row { border-top: 1px solid var(--line); padding: 12px 0 4px; }
-.reading-row h3 { margin: 0 0 2px; font-size: 1rem; }
-.reading-row p { margin: 2px 0; }
-.reading-math { color: var(--ink); }
-.reading-fields {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
-  gap: 10px;
-  margin-top: 8px;
-}
 .slot, .vessel input { width: 100%; margin-top: 8px; }
 .slot-grid { margin: 8px 0 12px; }
 body.customising .hero-card,
@@ -570,7 +553,6 @@ textarea { min-height: 72px; resize: vertical; }
   .pipe { display: none; }
   .top-actions { margin-left: 0; }
   .plant-head, .section-head { flex-direction: column; align-items: start; }
-  .reading-fields { grid-template-columns: 1fr 1fr; }
   .plant-tools { align-items: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) {

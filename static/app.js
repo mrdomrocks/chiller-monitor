@@ -7,7 +7,6 @@ const S = {
   view: "plant",
   pointId: null,
   customise: false,
-  readingSettings: false,
 };
 
 let shellReady = false;
@@ -309,11 +308,9 @@ function renderPlant(main) {
       <div class="plant-tools">
         <p class="muted" id="commsDetail"></p>
         ${S.customise ? "" : `<button type="button" data-action="customise">Customise display</button>`}
-        ${S.readingSettings ? "" : `<button type="button" data-action="reading-settings">Reading settings</button>`}
       </div>
     </div>
     ${customise}
-    ${readingSettingsHtml()}
     ${layoutOn("faceplate") ? faceplateHtml() : ""}
     ${heroHtml()}
     ${mimic}
@@ -676,101 +673,6 @@ function profileHtml() {
   </section>`;
 }
 
-function readingSettingsHtml() {
-  if (!S.readingSettings || !S.site) return "";
-  const roles = [
-    ["supply_temp", "Flow · outlet"],
-    ["return_temp", "Return · inlet"],
-    ["high_pressure", "High pressure"],
-    ["low_pressure", "Low pressure"],
-    ["pump_pressure", "Pump pressure"],
-  ];
-  return `<section class="reading-settings">
-    <div class="section-head">
-      <div>
-        <h2>Reading settings</h2>
-        <p class="muted">Temperature and pressure on this display are the Modbus register multiplied by the scale, then the offset is added. Decimals choose the places shown. Unit is the label beside the number.</p>
-      </div>
-      <button type="button" data-action="reading-settings-done">Done</button>
-    </div>
-    <form id="readingForm">
-      ${roles.map(([role, title]) => readingRow(title, bound(role))).join("")}
-      <div class="form-actions">
-        <button class="primary" type="submit">Save settings</button>
-      </div>
-    </form>
-  </section>`;
-}
-
-function readingRow(title, point) {
-  if (!point) {
-    return `<article class="reading-row">
-      <h3>${esc(title)}</h3>
-      <p class="muted">Not assigned. Choose the register under Customise display.</p>
-    </article>`;
-  }
-  const numeric = point.dtype !== "bool" && point.function !== "coil" && point.function !== "discrete";
-  if (!numeric) {
-    return `<article class="reading-row">
-      <h3>${esc(title)}</h3>
-      <p class="muted">${esc(point.name)} · ${esc(addressLabel(point))} is on or off. Scale and offset apply to a number register.</p>
-    </article>`;
-  }
-  return `<article class="reading-row" data-reading="${esc(point.id)}">
-    <h3>${esc(title)}</h3>
-    <p class="muted">${esc(point.name)} · ${esc(addressLabel(point))}</p>
-    <p class="reading-math" data-reading-math="${esc(point.id)}"></p>
-    <div class="reading-fields">
-      <label>Scale <input data-reading-field="scale" type="number" step="any" value="${esc(point.scale)}" required></label>
-      <label>Offset <input data-reading-field="offset" type="number" step="any" value="${esc(point.offset)}" required></label>
-      <label>Decimals <input data-reading-field="decimals" type="number" min="0" max="4" step="1" value="${esc(point.decimals)}" required></label>
-      <label>Unit <input data-reading-field="unit" maxlength="16" value="${esc(point.unit)}"></label>
-    </div>
-  </article>`;
-}
-
-function storedFromReading(point, reading) {
-  if (!reading || reading.quality !== "good" || !Array.isArray(reading.raw) || !reading.raw.length) return null;
-  const word = Number(reading.raw[0]);
-  if (!Number.isFinite(word)) return null;
-  if (reading.raw.length === 1 && point.dtype === "int16") return word > 32767 ? word - 65536 : word;
-  if (reading.raw.length === 1 && point.dtype === "uint16") return word;
-  const scale = Number(point.scale);
-  if (!scale || typeof reading.value !== "number") return null;
-  return (Number(reading.value) - Number(point.offset || 0)) / scale;
-}
-
-function trimNum(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "—";
-  return String(Math.round(number * 10000) / 10000);
-}
-
-function readingMathText(point, scale, offset, decimals, unit) {
-  const reading = readingFor(point.id);
-  const stored = storedFromReading(point, reading);
-  const scaleNumber = Number(scale);
-  const offsetNumber = Number(offset);
-  if (stored === null) return "Connect to see the register turn into this reading.";
-  if (!Number.isFinite(scaleNumber) || scaleNumber === 0 || !Number.isFinite(offsetNumber)) return "Enter a scale other than 0, and an offset. Use 0 when the register needs no shift.";
-  const places = Number(decimals);
-  if (!Number.isInteger(places) || places < 0 || places > 4) return "Decimals must be a whole number from 0 to 4.";
-  const shown = (stored * scaleNumber + offsetNumber).toFixed(places);
-  const rawLabel = reading.raw.length === 1 ? String(stored) : reading.raw.join(", ");
-  const unitText = String(unit || "").trim();
-  return `Register ${rawLabel} × ${trimNum(scaleNumber)} + ${trimNum(offsetNumber)} = ${shown}${unitText ? ` ${unitText}` : ""}`;
-}
-
-function paintReadingMath() {
-  document.querySelectorAll("[data-reading-math]").forEach((el) => {
-    const point = pointById(el.dataset.readingMath);
-    const row = el.closest("[data-reading]");
-    if (!point || !row) return;
-    const field = (name) => row.querySelector(`[data-reading-field="${name}"]`)?.value;
-    el.textContent = readingMathText(point, field("scale"), field("offset"), field("decimals"), field("unit"));
-  });
-}
-
 function customiseBar(site) {
   const sections = LAYOUT.map(([key, label]) => `
     <label class="inline"><input type="checkbox" data-layout="${key}"${layoutOn(key) ? " checked" : ""}> ${esc(label)}</label>`).join("");
@@ -782,7 +684,7 @@ function customiseBar(site) {
     <div class="section-head">
       <div>
         <h2>Display</h2>
-        <p class="muted">Choose which parts of this plant page are shown, which point fills each tile, and how that point is drawn. Register map draws every other enabled point from the Modbus profile and fills it when this site is connected. Scale and offset for the temperature and pressure tiles are under Reading settings. Changes are saved with this site.</p>
+        <p class="muted">Choose which parts of this plant page are shown, which point fills each tile, and how that point is drawn. Register map draws every other enabled point from the Modbus profile and fills it when this site is connected. Addresses and scaling stay on the register map. Changes are saved with this site.</p>
       </div>
       <button type="button" class="primary" data-action="customise-done">Done</button>
     </div>
@@ -1196,7 +1098,6 @@ function paintLive() {
       button.classList.toggle("selected", Boolean(reading && reading.quality === "good" && Boolean(reading.value) === want));
     });
   });
-  paintReadingMath();
   document.querySelectorAll("tr[data-point]").forEach((row) => {
     const reading = readingFor(row.dataset.point);
     row.classList.toggle("alarm", Boolean(reading && reading.alarm && reading.quality === "good"));
@@ -1504,17 +1405,6 @@ async function onClick(event) {
     render();
     return;
   }
-  if (action === "reading-settings") {
-    S.readingSettings = true;
-    S.view = "plant";
-    render();
-    return;
-  }
-  if (action === "reading-settings-done") {
-    S.readingSettings = false;
-    render();
-    return;
-  }
   if (action === "toggle-connect") {
     await guard(async () => {
       if (!S.site) return;
@@ -1626,7 +1516,6 @@ async function onClick(event) {
         S.live = await api(`/api/sites/${S.site.id}/connect`, { method: "POST" });
       }
       S.customise = false;
-      S.readingSettings = false;
       S.view = "plant";
       render();
       toast("Live HMI is reading this register map", true);
@@ -1702,39 +1591,6 @@ async function onClick(event) {
   }
 }
 
-async function saveReadingSettings(form) {
-  const rows = [...form.querySelectorAll("[data-reading]")];
-  if (!rows.length) {
-    toast("Assign the temperature and pressure registers first");
-    return;
-  }
-  await guard(async () => {
-    let site = S.site;
-    let saved = 0;
-    for (const row of rows) {
-      const point = pointById(row.dataset.reading);
-      if (!point) continue;
-      const field = (name) => row.querySelector(`[data-reading-field="${name}"]`).value;
-      const scale = Number(field("scale"));
-      const offset = Number(field("offset"));
-      const decimals = Number(field("decimals"));
-      const unit = field("unit").trim();
-      if (!Number.isFinite(scale) || scale === 0) throw new Error(`${point.name}: enter a scale other than 0`);
-      if (!Number.isFinite(offset)) throw new Error(`${point.name}: enter an offset. Use 0 when the register needs no shift`);
-      if (!Number.isInteger(decimals) || decimals < 0 || decimals > 4) throw new Error(`${point.name}: decimals must be a whole number from 0 to 4`);
-      if (scale === point.scale && offset === point.offset && decimals === point.decimals && unit === point.unit) continue;
-      site = await api(`/api/sites/${S.site.id}/points/${point.id}`, {
-        method: "PUT",
-        body: { ...point, scale, offset, decimals, unit },
-      });
-      S.site = site;
-      saved += 1;
-    }
-    render();
-    toast(saved ? "Reading settings saved" : "Reading settings already match these values", true);
-  });
-}
-
 async function onSubmit(event) {
   const form = event.target;
   if (form.id === "newSiteForm") {
@@ -1756,9 +1612,6 @@ async function onSubmit(event) {
       fillSiteSelect();
       toast("Link saved", true);
     });
-  } else if (form.id === "readingForm") {
-    event.preventDefault();
-    await saveReadingSettings(form);
   } else if (form.id === "pointForm") {
     event.preventDefault();
     await guard(async () => {
@@ -1853,7 +1706,6 @@ async function onChange(event) {
     const sized = /^demo-(\d+)$/.exec(next || "");
     S.pointId = null;
     S.customise = false;
-    S.readingSettings = false;
     if (sized && !(S.live?.simulator_running && S.live.site_id === next)) {
       await guard(async () => {
         S.live = await api(`/api/demo/compressors/${sized[1]}`, { method: "POST" });
@@ -1947,7 +1799,6 @@ function onInput(event) {
   }
   const form = event.target.form;
   if (form && form.id === "pointForm") wireHint();
-  if (event.target.dataset.readingField) paintReadingMath();
   if (form && form.dataset.writePoint && event.target.name === "value") scheduleWritePlan(form);
 }
 

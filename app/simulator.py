@@ -296,8 +296,7 @@ class ChillerSimulator:
         }.items():
             if point_id in by_id and point_id not in values:
                 values[point_id] = sample
-        # These registers stay as raw counts. Reading settings apply scale and offset,
-        # so the HMI number changes when those settings change.
+        # These registers stay as raw counts. The HMI applies each point's scale and offset.
         if "water_outlet" in by_id and "chw_supply" not in by_id:
             held_raw = {
                 "water_outlet": 8 + round(math.sin(now / 8.0)),
