@@ -46,6 +46,16 @@ _LAYOUT = (
     ("profile", True),
     ("table", True),
 )
+_OPERATION_LAYOUT = {
+    "faceplate": True,
+    "mimic": False,
+    "compressors": False,
+    "readings": False,
+    "status": False,
+    "outputs": False,
+    "profile": False,
+    "table": False,
+}
 
 
 def _load() -> dict:
@@ -438,6 +448,7 @@ def list_sites() -> list[dict]:
         for site in data["sites"]:
             changed = _bind_sheet_faceplate(site) or changed
             changed = _clear_pump_pressure(site) or changed
+            changed = _focus_plant(site) or changed
         if changed or any(_ensure_chiller_name(site) for site in data["sites"]):
             _save(data)
         return [public_site(site) for site in data["sites"]]
@@ -451,6 +462,7 @@ def get_site(site_id: str) -> dict:
                 changed = _ensure_chiller_name(site)
                 changed = _bind_sheet_faceplate(site) or changed
                 changed = _clear_pump_pressure(site) or changed
+                changed = _focus_plant(site) or changed
                 if changed:
                     _save(data)
                 return deepcopy(site)
@@ -693,6 +705,17 @@ def _bind_sheet_faceplate(site: dict) -> bool:
             bindings[role] = point_id
             changed = True
     return changed
+
+
+def _focus_plant(site: dict) -> bool:
+    """Show the operational readings once. A later Customise choice is kept."""
+    if "water_outlet" not in _point_ids(site):
+        return False
+    if site.get("plant_focus") == "operation":
+        return False
+    site["layout"] = normalize_layout(_OPERATION_LAYOUT)
+    site["plant_focus"] = "operation"
+    return True
 
 
 def _clear_pump_pressure(site: dict) -> bool:

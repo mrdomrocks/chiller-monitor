@@ -2332,12 +2332,12 @@
   },
   "layout": {
     "faceplate": true,
-    "mimic": true,
-    "compressors": true,
+    "mimic": false,
+    "compressors": false,
     "readings": false,
-    "status": true,
+    "status": false,
     "outputs": false,
-    "profile": true,
-    "table": true
+    "profile": false,
+    "table": false
   }
 }

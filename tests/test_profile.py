@@ -48,6 +48,9 @@ def test_one_compressor_profile_imports(tmp_path, monkeypatch):
     assert imported["bindings"]["setpoint"] is None
     assert imported["layout"]["readings"] is False
     assert imported["layout"]["faceplate"] is True
+    assert imported["layout"]["mimic"] is False
+    assert imported["layout"]["profile"] is False
+    assert imported["layout"]["table"] is False
     assert all(point["function"] == "holding" and not point["writable"] for point in imported["points"])
     assert 40027 not in {point["address_number"] for point in imported["points"]}
 
@@ -100,6 +103,23 @@ def test_single_compressor_demo_lists_every_sheet_register(tmp_path, monkeypatch
     assert listed["bindings"]["high_pressure"] == "comp_1_discharge_pressure"
     assert listed["bindings"]["low_pressure"] == "comp_1_suction_pressure"
     assert listed["bindings"]["pump_pressure"] is None
+    assert listed["layout"]["faceplate"] is True
+    assert listed["layout"]["mimic"] is False
+    assert listed["layout"]["profile"] is False
+    assert listed["layout"]["table"] is False
+
+
+def test_operation_focus_keeps_a_later_display_choice(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHILLER_DATA", str(tmp_path))
+    from app.store import ensure_sized_demo, list_sites, update_hmi
+
+    ensure_sized_demo(1, 1502)
+    list_sites()
+    update_hmi("demo-1", {"layout": {"table": True}})
+    again = next(item for item in list_sites() if item["id"] == "demo-1")
+    assert again["layout"]["table"] is True
+    assert again["layout"]["profile"] is False
+    assert again["layout"]["faceplate"] is True
 
 
 def test_sheet_faceplate_bindings_fill_when_the_keys_are_missing(tmp_path, monkeypatch):
