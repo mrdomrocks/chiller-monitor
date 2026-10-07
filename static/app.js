@@ -461,7 +461,7 @@ function faceplateHtml() {
     <div class="section-head">
       <div>
         <h2>Chiller display</h2>
-        <p class="muted">Outlet and inlet temperatures (flow and return), compressor load, high and low pressure, and the pump.</p>
+        <p class="muted">Outlet and inlet temperatures (flow and return), compressor load, high and low pressure, and the pump run state.</p>
       </div>
     </div>
     <div class="face-grid">
@@ -471,7 +471,6 @@ function faceplateHtml() {
       ${runTile("evap_pump", "Pump")}
       ${analogTile("high_pressure", "High pressure")}
       ${analogTile("low_pressure", "Low pressure")}
-      ${analogTile("pump_pressure", "Pump pressure")}
     </div>
     ${alarmFace()}
   </section>`;
@@ -487,7 +486,6 @@ function faceplateOwnedIds() {
   take(bound("evap_pump"));
   take(bound("high_pressure"));
   take(bound("low_pressure"));
-  take(bound("pump_pressure"));
   take(bound("alarm"));
   for (const point of faultPoints()) ids.add(point.id);
   return ids;
@@ -586,7 +584,7 @@ function claimedPointIds() {
 function profilePoints() {
   const claimed = claimedPointIds();
   return S.site.points
-    .filter((point) => point.enabled && !claimed.has(point.id))
+    .filter((point) => point.enabled && point.widget !== "hidden" && !claimed.has(point.id))
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
 }
 

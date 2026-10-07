@@ -437,6 +437,7 @@ def list_sites() -> list[dict]:
             changed = changed or _setpoint_layout(site) != before
         for site in data["sites"]:
             changed = _bind_sheet_faceplate(site) or changed
+            changed = _clear_pump_pressure(site) or changed
         if changed or any(_ensure_chiller_name(site) for site in data["sites"]):
             _save(data)
         return [public_site(site) for site in data["sites"]]
@@ -449,6 +450,7 @@ def get_site(site_id: str) -> dict:
             if site["id"] == site_id:
                 changed = _ensure_chiller_name(site)
                 changed = _bind_sheet_faceplate(site) or changed
+                changed = _clear_pump_pressure(site) or changed
                 if changed:
                     _save(data)
                 return deepcopy(site)
@@ -666,7 +668,6 @@ _TWO_COMPRESSOR_NOTES = (
 _SHEET_FACEPLATE = (
     ("high_pressure", "comp_1_discharge_pressure"),
     ("low_pressure", "comp_1_suction_pressure"),
-    ("pump_pressure", "press_2_cool_inlet_nor"),
 )
 
 
@@ -690,6 +691,20 @@ def _bind_sheet_faceplate(site: dict) -> bool:
     for role, point_id in _SHEET_FACEPLATE:
         if role not in bindings and point_id in ids:
             bindings[role] = point_id
+            changed = True
+    return changed
+
+
+def _clear_pump_pressure(site: dict) -> bool:
+    """The controller does not provide a pump-pressure reading for the HMI."""
+    changed = False
+    bindings = site.get("bindings")
+    if isinstance(bindings, dict) and bindings.get("pump_pressure"):
+        bindings["pump_pressure"] = None
+        changed = True
+    for point in site.get("points") or []:
+        if point.get("id") == "press_2_cool_inlet_nor" and point.get("widget") != "hidden":
+            point["widget"] = "hidden"
             changed = True
     return changed
 
