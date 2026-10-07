@@ -41,7 +41,8 @@ def test_one_compressor_profile_imports(tmp_path, monkeypatch):
     assert imported["bindings"]["return_temp"] == "evaporator_outlet_temp"
     assert imported["bindings"]["high_pressure"] == "comp_1_discharge_pressure"
     assert imported["bindings"]["low_pressure"] == "comp_1_suction_pressure"
-    assert imported["bindings"]["pump_pressure"] == "press_2_cool_inlet_nor"
+    assert imported["bindings"]["pump_pressure"] is None
+    assert by_id["press_2_cool_inlet_nor"]["widget"] == "hidden"
     assert by_id["evaporator_outlet_temp"]["name"] == "Return temperature"
     assert by_id["evaporator_outlet_temp"]["address_number"] == 40004
     assert imported["bindings"]["setpoint"] is None
@@ -98,7 +99,7 @@ def test_single_compressor_demo_lists_every_sheet_register(tmp_path, monkeypatch
     assert any(point["id"] == "fan_output" for point in listed["points"])
     assert listed["bindings"]["high_pressure"] == "comp_1_discharge_pressure"
     assert listed["bindings"]["low_pressure"] == "comp_1_suction_pressure"
-    assert listed["bindings"]["pump_pressure"] == "press_2_cool_inlet_nor"
+    assert listed["bindings"]["pump_pressure"] is None
 
 
 def test_sheet_faceplate_bindings_fill_when_the_keys_are_missing(tmp_path, monkeypatch):
@@ -110,12 +111,13 @@ def test_sheet_faceplate_bindings_fill_when_the_keys_are_missing(tmp_path, monke
     path = data_dir() / "sites.json"
     stored = json.loads(path.read_text(encoding="utf-8"))
     demo = next(site for site in stored["sites"] if site["id"] == "demo-1")
-    for role in ("high_pressure", "low_pressure", "pump_pressure"):
+    for role in ("high_pressure", "low_pressure"):
         demo["bindings"].pop(role, None)
     demo["bindings"]["high_pressure"] = None
+    demo["bindings"]["pump_pressure"] = "press_2_cool_inlet_nor"
     path.write_text(json.dumps(stored), encoding="utf-8")
 
     listed = next(item for item in list_sites() if item["id"] == "demo-1")
     assert listed["bindings"]["high_pressure"] is None
     assert listed["bindings"]["low_pressure"] == "comp_1_suction_pressure"
-    assert listed["bindings"]["pump_pressure"] == "press_2_cool_inlet_nor"
+    assert listed["bindings"]["pump_pressure"] is None
