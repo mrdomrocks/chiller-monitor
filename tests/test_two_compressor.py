@@ -106,4 +106,7 @@ def test_two_compressor_list_loads_onto_a_site(tmp_path, monkeypatch):
         assert by_id["comp_1_running_current"]["unit"] == "A"
         assert body["bindings"]["comp_1_run"] == "comp_1_running"
         assert body["bindings"]["comp_2_run"] == "comp_2_running"
+        assert body["layout"]["faceplate"] is True
+        assert body["layout"]["profile"] is False
+        assert body["layout"]["table"] is False
         assert len(body["points"]) >= 297

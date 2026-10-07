@@ -347,13 +347,13 @@ def two_compressor_document() -> dict:
         },
         "layout": {
             "faceplate": True,
-            "mimic": True,
-            "compressors": True,
+            "mimic": False,
+            "compressors": False,
             "readings": False,
-            "status": True,
+            "status": False,
             "outputs": False,
-            "profile": True,
-            "table": True,
+            "profile": False,
+            "table": False,
         },
     }
 

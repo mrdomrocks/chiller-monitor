@@ -289,8 +289,8 @@ function renderPlant(main) {
       </table>
     </div>` : "";
   main.innerHTML = `
-    <p class="demo-flag" id="demoFlag" hidden>Demo controller on this computer. Supply temperature alarms above its high limit so the banner can be checked.</p>
-    <div class="alarm-banner" id="alarmBanner" hidden></div>
+    <p class="demo-flag" id="demoFlag" hidden>Demo on this computer.</p>
+    ${controllerSheet() ? "" : `<div class="alarm-banner" id="alarmBanner" hidden></div>`}
     <div class="plant-head">
       <div>
         <h1 id="plantTitle">${esc(plantTitle())}</h1>
@@ -303,7 +303,7 @@ function renderPlant(main) {
     </div>
     ${customise}
     ${layoutOn("faceplate") ? faceplateHtml() : ""}
-    ${heroHtml()}
+    ${controllerSheet() ? "" : heroHtml()}
     ${mimic}
     ${compressors}
     ${readings}
@@ -366,13 +366,16 @@ function shownFault(point, reading) {
   return "";
 }
 
-function analogTile(roleId, title) {
-  const point = bound(roleId);
+function controllerSheet() {
+  return Boolean(S.site?.points?.some((point) => point.id === "water_outlet"));
+}
+
+function analogPointTile(point, title, roleId) {
   if (!point) {
     return `<article class="face-tile missing">
       <span class="kicker">${esc(title)}</span>
       <b>Not assigned</b>
-      ${slotSelect(roleId)}
+      ${roleId ? slotSelect(roleId) : ""}
     </article>`;
   }
   const numeric = point.dtype !== "bool" && point.function !== "coil" && point.function !== "discrete";
@@ -381,8 +384,12 @@ function analogTile(roleId, title) {
     <span class="face-point">${esc(point.name)}</span>
     <div class="figure"><b data-value="${esc(point.id)}">—</b><small>${esc(point.unit)}</small></div>
     ${numeric ? `<div class="bar"><span data-bar="${esc(point.id)}"></span></div>` : ""}
-    ${slotSelect(roleId)}
+    ${roleId ? slotSelect(roleId) : ""}
   </article>`;
+}
+
+function analogTile(roleId, title) {
+  return analogPointTile(bound(roleId), title, roleId);
 }
 
 function loadTile() {
@@ -405,13 +412,12 @@ function loadTile() {
   </article>`;
 }
 
-function runTile(roleId, title) {
-  const point = bound(roleId);
+function runPointTile(point, title, roleId) {
   if (!point) {
     return `<article class="face-tile missing">
       <span class="kicker">${esc(title)}</span>
       <b>Not assigned</b>
-      ${slotSelect(roleId)}
+      ${roleId ? slotSelect(roleId) : ""}
     </article>`;
   }
   return `<article class="face-tile lamp-card" data-lamp="${esc(point.id)}">
@@ -420,9 +426,39 @@ function runTile(roleId, title) {
       <span class="kicker">${esc(title)}</span>
       <span class="face-point">${esc(point.name)}</span>
       <strong data-value="${esc(point.id)}">—</strong>
-      ${slotSelect(roleId)}
+      ${roleId ? slotSelect(roleId) : ""}
     </div>
   </article>`;
+}
+
+function runTile(roleId, title) {
+  return runPointTile(bound(roleId), title, roleId);
+}
+
+function compressorOperationTiles() {
+  const slots = compressorView().slots.filter((slot) => slot.run);
+  if (!slots.length) {
+    return bound("compressor") ? runTile("compressor", "Compressor") : "";
+  }
+  const many = slots.length > 1;
+  return slots.map((slot) => runPointTile(
+    slot.run,
+    many ? `Compressor ${slot.index}` : "Compressor",
+    `comp_${slot.index}_run`,
+  )).join("");
+}
+
+function extraCircuitPressures() {
+  const used = new Set([bound("low_pressure")?.id, bound("high_pressure")?.id].filter(Boolean));
+  return [
+    ["comp_2_suction_pressure", "2# Suction"],
+    ["comp_2_discharge_pressure", "2# Discharge"],
+  ].map(([id, title]) => {
+    const point = pointById(id);
+    if (!point || used.has(point.id) || point.widget === "hidden") return "";
+    used.add(point.id);
+    return analogPointTile(point, title);
+  }).join("");
 }
 
 function alarmFace() {
@@ -457,6 +493,25 @@ function alarmFace() {
 }
 
 function faceplateHtml() {
+  if (controllerSheet()) {
+    return `<section class="faceplate" id="faceplate">
+      <div class="section-head">
+        <div>
+          <h2>Chiller display</h2>
+          <p class="muted">Inlet and outlet temperature, compressor operation, pump running, suction and discharge pressure.</p>
+        </div>
+      </div>
+      <div class="face-grid">
+        ${analogTile("return_temp", "Inlet")}
+        ${analogTile("supply_temp", "Outlet")}
+        ${compressorOperationTiles()}
+        ${runTile("evap_pump", "Pump")}
+        ${analogTile("low_pressure", "Suction")}
+        ${analogTile("high_pressure", "Discharge")}
+        ${extraCircuitPressures()}
+      </div>
+    </section>`;
+  }
   return `<section class="faceplate" id="faceplate">
     <div class="section-head">
       <div>
@@ -482,10 +537,16 @@ function faceplateOwnedIds() {
   const take = (point) => { if (point) ids.add(point.id); };
   take(bound("supply_temp"));
   take(bound("return_temp"));
-  take(loadPoint());
   take(bound("evap_pump"));
   take(bound("high_pressure"));
   take(bound("low_pressure"));
+  if (controllerSheet()) {
+    for (const slot of compressorView().slots) take(slot.run);
+    take(pointById("comp_2_suction_pressure"));
+    take(pointById("comp_2_discharge_pressure"));
+    return ids;
+  }
+  take(loadPoint());
   take(bound("alarm"));
   for (const point of faultPoints()) ids.add(point.id);
   return ids;
@@ -946,9 +1007,7 @@ function paintLive() {
       if (sized) {
         const count = Number(sized[1]);
         const noun = count === 1 ? "compressor" : "compressors";
-        flag.textContent = count === 1
-          ? "Demo controller with 1 compressor. A fault is held on so the alarm box shows the alarm message."
-          : `Demo controller with ${count} ${noun}. The plant shows that many compressor cards.`;
+        flag.textContent = `Demo with ${count} ${noun}.`;
       } else {
         flag.textContent = "Demo controller on this computer. Supply temperature alarms above its high limit so the banner can be checked.";
       }
