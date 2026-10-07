@@ -20,6 +20,7 @@ from app.paths import ROOT
 from app.store import (
     add_point,
     apply_one_compressor,
+    apply_two_compressor,
     apply_template,
     clear_vpn_config,
     create_site,
@@ -222,6 +223,14 @@ def post_template(site_id: str):
 def post_one_compressor(site_id: str):
     try:
         return apply_one_compressor(site_id)
+    except KeyError as exc:
+        raise HTTPException(404, "Site not found") from exc
+
+
+@app.post("/api/sites/{site_id}/profile/two-compressor")
+def post_two_compressor(site_id: str):
+    try:
+        return apply_two_compressor(site_id)
     except KeyError as exc:
         raise HTTPException(404, "Site not found") from exc
 

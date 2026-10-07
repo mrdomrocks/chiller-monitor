@@ -19,11 +19,12 @@ from app.paths import ROOT, data_dir, vpn_dir
 from app.template import ROLES, default_bindings, default_points
 
 DEMO_ID = "demo"
-DEMO_SIZES = (1,)
+DEMO_SIZES = (1, 2)
 _DEMO_NAMES = {
     1: "Demo — single compressor",
+    2: "Demo — two compressors",
 }
-_RETIRED_DEMOS = {"demo-2", "demo-4", "demo-6"}
+_RETIRED_DEMOS = {"demo-4", "demo-6"}
 
 
 def sized_demo_id(count: int) -> str:
@@ -423,6 +424,12 @@ def list_sites() -> list[dict]:
                 )
                 changed = True
                 continue
+            if site["id"] == sized_demo_id(2) and "comp_2_suction_pressure" not in _point_ids(site):
+                _apply_two_compressor_map(site)
+                site["name"] = _DEMO_NAMES[2]
+                site["notes"] = _TWO_COMPRESSOR_NOTES
+                changed = True
+                continue
             if not is_demo_site(site["id"]):
                 continue
             before = _setpoint_layout(site)
@@ -649,6 +656,13 @@ def one_compressor_document() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+_TWO_COMPRESSOR_NOTES = (
+    "Simulated chiller with 2 compressors. The register map is the Advance two-compressor sheet: "
+    "400001–401005, stored as Modicon 40001–41005. Gain 0.1 is the scale on the temperatures and pressures. "
+    "400034 is compressor 2 suction pressure. This sheet has no pump-pressure register."
+)
+
+
 _SHEET_FACEPLATE = (
     ("high_pressure", "comp_1_discharge_pressure"),
     ("low_pressure", "comp_1_suction_pressure"),
@@ -702,6 +716,29 @@ def apply_one_compressor(site_id: str) -> dict:
         data = _load()
         site = _find(data, site_id)
         _apply_one_compressor_map(site)
+        _save(data)
+        return public_site(site)
+
+
+def _apply_two_compressor_map(site: dict) -> None:
+    """Replace a site map with every row from the two-compressor controller sheet."""
+    from app.two_compressor import two_compressor_document
+
+    document = two_compressor_document()
+    site["points"] = [normalize_point(point) for point in document["points"]]
+    site["bindings"] = normalize_bindings(document.get("bindings"), site["points"])
+    site["layout"] = normalize_layout(document.get("layout"), site.get("layout"))
+    if document.get("evap_label"):
+        site["evap_label"] = str(document["evap_label"])[:40]
+    if document.get("cond_label"):
+        site["cond_label"] = str(document["cond_label"])[:40]
+
+
+def apply_two_compressor(site_id: str) -> dict:
+    with _LOCK:
+        data = _load()
+        site = _find(data, site_id)
+        _apply_two_compressor_map(site)
         _save(data)
         return public_site(site)
 
@@ -781,7 +818,7 @@ def ensure_sized_demo(count: int, port: int) -> dict:
     """A simulated chiller whose fitted-compressor register stays at this count."""
     count = int(count)
     if count not in DEMO_SIZES:
-        raise ValueError("The supplied sheet is the single-compressor demo")
+        raise ValueError("A sheet for that compressor count is not loaded yet")
     with _LOCK:
         data = _load()
         site_id = sized_demo_id(count)
@@ -809,6 +846,10 @@ def ensure_sized_demo(count: int, port: int) -> dict:
                 "Simulated chiller with 1 compressor. The register map is the controller sheet: "
                 "400001–400078, stored as Modicon 40001–40078. Addresses the sheet skips are not listed."
             )
+        elif count == 2:
+            if "comp_2_suction_pressure" not in _point_ids(found):
+                _apply_two_compressor_map(found)
+            found["notes"] = _TWO_COMPRESSOR_NOTES
         elif "water_outlet" not in _point_ids(found):
             _fill_missing_template(found)
             _upgrade_stock_float_setpoint(found)

@@ -112,7 +112,7 @@ class Monitor:
     async def start_sized_demo(self, count: int) -> dict:
         count = int(count)
         if count not in DEMO_SIZES:
-            raise ValueError("The supplied sheet is the single-compressor demo")
+            raise ValueError("A sheet for that compressor count is not loaded yet")
         async with self._lock:
             await self._teardown_locked()
             await self._stop_simulator()

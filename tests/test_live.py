@@ -37,7 +37,7 @@ def test_site_list_keeps_the_single_compressor_demo():
     data = _load()
     data["sites"].extend(
         [
-            {"id": "demo-2", "name": "Demo — two compressors", "points": [], "bindings": {}},
+            {"id": "demo-2", "name": "Old two compressor demo", "points": [], "bindings": {}},
             {"id": "demo-4", "name": "Demo — four compressors", "points": [], "bindings": {}},
             {"id": "demo-6", "name": "Demo — six compressors", "points": [], "bindings": {}},
         ]
@@ -46,7 +46,9 @@ def test_site_list_keeps_the_single_compressor_demo():
     first = list_sites()
     names = {site["id"]: site["name"] for site in first}
     assert names["demo-1"] == "Demo — single compressor"
-    assert "demo-2" not in names
+    assert names["demo-2"] == "Demo — two compressors"
+    two = next(site for site in first if site["id"] == "demo-2")
+    assert any(point["id"] == "comp_2_suction_pressure" and point["address_number"] == 40034 for point in two["points"])
     assert "demo-4" not in names
     assert "demo-6" not in names
     again = list_sites()
@@ -330,7 +332,30 @@ async def sized_demo_session():
         assert name["quality"] == "good"
         assert name["value"] == "1 compressor"
 
-        for count in (2, 4, 6, 3):
+        second = await monitor.start_sized_demo(2)
+        assert second["site_id"] == "demo-2"
+        two = None
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
+            two = monitor.snapshot()["values"]
+            suction = two.get("comp_2_suction_pressure")
+            amount = two.get("comp_amount")
+            if suction and suction["quality"] == "good" and amount and amount["value"] == 2:
+                break
+        assert two["comp_amount"]["value"] == 2
+        assert two["comp_1_suction_pressure"]["value"] == 8.7
+        assert two["comp_2_suction_pressure"]["value"] == 8.8
+        assert two["comp_1_discharge_pressure"]["value"] == 24.4
+        assert two["comp_2_discharge_pressure"]["value"] == 24.3
+        assert 12.0 <= two["water_outlet"]["value"] <= 13.2
+        assert two["water_outlet"]["unit"] == "°C"
+        assert two["comp_2_discharge_pressure"]["unit"] == "bar"
+        assert two["comp_1_running"]["value"] is True
+        assert two["comp_2_running"]["value"] is True
+        assert two["target_temperature"]["value"] == 12
+
+        for count in (4, 6, 3):
             with pytest.raises(ValueError):
                 await monitor.start_sized_demo(count)
 
@@ -358,7 +383,19 @@ def test_sized_demo_http_rejects_other_counts():
                 break
         assert outlet["quality"] == "good"
         assert live["demo"] is True
-        for count in (2, 4, 6, 3):
+        started_two = client.post("/api/demo/compressors/2")
+        assert started_two.status_code == 200, started_two.text
+        assert started_two.json()["site_id"] == "demo-2"
+        suction = None
+        for _ in range(40):
+            time.sleep(0.1)
+            live = client.get("/api/live").json()
+            suction = live["values"].get("comp_2_suction_pressure")
+            if suction and suction["quality"] == "good":
+                break
+        assert suction["quality"] == "good"
+        assert suction["value"] == 8.8
+        for count in (4, 6, 3):
             rejected = client.post(f"/api/demo/compressors/{count}")
             assert rejected.status_code == 400
         stopped = client.post("/api/demo/stop")
