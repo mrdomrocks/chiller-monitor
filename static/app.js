@@ -129,13 +129,6 @@ function ensureShell() {
       </div>
       <div class="top-actions">
         <button type="button" class="primary" id="connectBtn" data-action="toggle-connect">Connect</button>
-        <div class="demo-sizes" role="group" aria-label="Compressor count demos">
-          <span class="kicker">Compressors</span>
-          <button type="button" data-action="demo-size" data-count="1" aria-label="Demo with one compressor">1</button>
-          <button type="button" data-action="demo-size" data-count="2" aria-label="Demo with two compressors">2</button>
-          <button type="button" data-action="demo-size" data-count="4" aria-label="Demo with four compressors">4</button>
-          <button type="button" data-action="demo-size" data-count="6" aria-label="Demo with six compressors">6</button>
-        </div>
         <button type="button" data-action="add-site">New site</button>
       </div>
     </header>
@@ -249,9 +242,6 @@ function render() {
         <p>Join the chiller network on this laptop, then Chiller Monitor opens the same Modbus socket Modbus Monitor uses. Modbus TCP is for the RUT’s translating gateway. RTU over TCP is for a raw serial-over-IP tunnel. Customise display on the plant page chooses what the HMI shows. The register map holds addresses and scaling.</p>
         <div class="actions">
           <button class="primary" type="button" data-action="demo-size" data-count="1">Single compressor</button>
-          <button type="button" data-action="demo-size" data-count="2">Two compressors</button>
-          <button type="button" data-action="demo-size" data-count="4">Four compressors</button>
-          <button type="button" data-action="demo-size" data-count="6">Six compressors</button>
           <button type="button" data-action="add-site">Create a site</button>
         </div>
       </section>`;

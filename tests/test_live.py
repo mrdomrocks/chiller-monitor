@@ -31,18 +31,26 @@ def test_create_site_strips_password_and_rejects_bad_area():
         update_point(site["id"], "chw_supply", {**get_site(site["id"])["points"][0], "function": "coil", "address_number": 40001})
 
 
-def test_site_list_keeps_the_compressor_demos():
+def test_site_list_keeps_the_single_compressor_demo():
     from app.store import list_sites
 
+    data = _load()
+    data["sites"].extend(
+        [
+            {"id": "demo-2", "name": "Demo — two compressors", "points": [], "bindings": {}},
+            {"id": "demo-4", "name": "Demo — four compressors", "points": [], "bindings": {}},
+            {"id": "demo-6", "name": "Demo — six compressors", "points": [], "bindings": {}},
+        ]
+    )
+    _save(data)
     first = list_sites()
     names = {site["id"]: site["name"] for site in first}
     assert names["demo-1"] == "Demo — single compressor"
-    assert names["demo-2"] == "Demo — two compressors"
-    assert names["demo-4"] == "Demo — four compressors"
-    assert names["demo-6"] == "Demo — six compressors"
+    assert "demo-2" not in names
+    assert "demo-4" not in names
+    assert "demo-6" not in names
     again = list_sites()
     assert [site["id"] for site in again].count("demo-1") == 1
-    assert [site["id"] for site in again].count("demo-6") == 1
 
 
 def test_rtu_over_tcp_protocol_is_saved_with_the_site():
@@ -122,11 +130,9 @@ def test_stage_loads_follows_fitted_count():
 
 
 def test_stock_demo_setpoint_becomes_a_float():
-    from app.store import ensure_sized_demo
-
-    ensure_sized_demo(2, 1502)
+    ensure_demo(1502)
     data = _load()
-    found = next(site for site in data["sites"] if site["id"] == "demo-2")
+    found = next(site for site in data["sites"] if site["id"] == "demo")
     for point in found["points"]:
         if point["id"] == "setpoint":
             point["dtype"] = "int16"
@@ -139,7 +145,7 @@ def test_stock_demo_setpoint_becomes_a_float():
             point["function"] = "holding"
             point["address_number"] = 40004
     _save(data)
-    site = ensure_sized_demo(2, 1502)
+    site = ensure_demo(1502)
     setpoint = next(point for point in site["points"] if point["id"] == "setpoint")
     capacity = next(point for point in site["points"] if point["id"] == "capacity")
     assert setpoint["dtype"] == "float32"
@@ -148,25 +154,25 @@ def test_stock_demo_setpoint_becomes_a_float():
     assert capacity["address_number"] == 40010
 
     data = _load()
-    custom = next(site for site in data["sites"] if site["id"] == "demo-2")
+    custom = next(site for site in data["sites"] if site["id"] == "demo")
     for point in custom["points"]:
         if point["id"] == "setpoint":
             point["dtype"] = "int16"
             point["scale"] = 0.1
             point["address_number"] = 40100
     _save(data)
-    kept = ensure_sized_demo(2, 1502)
+    kept = ensure_demo(1502)
     setpoint = next(point for point in kept["points"] if point["id"] == "setpoint")
     assert setpoint["dtype"] == "int16"
     assert setpoint["address_number"] == 40100
 
 
 def test_listing_sites_upgrades_a_stock_demo_setpoint():
-    from app.store import ensure_sized_demo, list_sites
+    from app.store import list_sites
 
-    ensure_sized_demo(6, 1502)
+    ensure_demo(1502)
     data = _load()
-    found = next(site for site in data["sites"] if site["id"] == "demo-6")
+    found = next(site for site in data["sites"] if site["id"] == "demo")
     for point in found["points"]:
         if point["id"] == "setpoint":
             point["dtype"] = "int16"
@@ -178,7 +184,7 @@ def test_listing_sites_upgrades_a_stock_demo_setpoint():
             point["function"] = "holding"
     _save(data)
     list_sites()
-    site = get_site("demo-6")
+    site = get_site("demo")
     setpoint = next(point for point in site["points"] if point["id"] == "setpoint")
     capacity = next(point for point in site["points"] if point["id"] == "capacity")
     assert setpoint["dtype"] == "float32"
@@ -289,77 +295,49 @@ def test_sized_demos_report_fitted_compressors():
 async def sized_demo_session():
     monitor = Monitor()
     try:
-        for count in (1, 2, 4, 6):
-            started = await monitor.start_sized_demo(count)
-            assert started["site_id"] == f"demo-{count}"
-            assert started["simulator_running"] is True
-            site = get_site(f"demo-{count}")
-            if count == 1:
-                assert all(point["id"] != "compressor_count" for point in site["points"])
-                assert any(point["id"] == "water_outlet" and point["address_number"] == 40003 for point in site["points"])
-                values = None
-                deadline = time.monotonic() + 4
-                while time.monotonic() < deadline:
-                    await asyncio.sleep(0.1)
-                    values = monitor.snapshot()["values"]
-                    outlet = values.get("water_outlet")
-                    running = values.get("comp_1_running")
-                    if outlet and outlet["quality"] == "good" and running and running["value"] is True:
-                        break
-                assert values["water_outlet"]["quality"] == "good"
-                assert 5 <= values["water_outlet"]["value"] <= 10
-                assert values["comp_1_running"]["value"] is True
-                assert values["fan_output"]["value"] == 7
-                assert values["comp_1_suction_pressure"]["value"] == 4
-                assert values["comp_1_discharge_pressure"]["value"] == 14
-                assert values["press_2_cool_inlet_nor"]["value"] == 2
-                assert values["general_alarm"]["value"] is True
-                assert values["alarm_message1"]["value"] is True
-                assert values["alarm_message1"]["message"] == "Alarm Message1"
-                assert values["alarm_message_9"]["value"] == 12
-                assert values["alarm_message_9"]["message"] == "Alarm Message 9"
-                assert values["general_alarm"]["message"] == "General Alarm"
-                assert values["unit_active_status"]["value"] == 4
-                assert values["unit_active_status"]["message"] == "Unit active status: Alarm"
-                assert values["pump_running"]["value"] is True
-                name = values.get("chiller_name")
-                assert name["quality"] == "good"
-                assert name["value"] == "1 compressor"
-                continue
-            fitted = next(point for point in site["points"] if point["id"] == "compressor_count")
-            assert fitted["writable"] is False
-            values = None
-            deadline = time.monotonic() + 4
-            while time.monotonic() < deadline:
-                await asyncio.sleep(0.1)
-                values = monitor.snapshot()["values"]
-                reported = values.get("compressor_count")
-                first = values.get("comp_1_load")
-                if reported and reported["value"] == count and first and first["quality"] == "good" and first["value"] > 0:
-                    break
-            assert values["compressor_count"]["quality"] == "good"
-            assert values["compressor_count"]["value"] == count
-            assert values["comp_1_load"]["value"] > 0
-            assert values["comp_1_run"]["value"] is True
-            if count < 6:
-                idle = values[f"comp_{count + 1}_load"]
-                assert idle["quality"] == "good"
-                assert idle["value"] == 0
-                assert values[f"comp_{count + 1}_run"]["value"] is False
-            name = values.get("chiller_name")
-            assert name["quality"] == "good"
-            expected = "1 compressor" if count == 1 else f"{count} compressors"
-            assert name["value"] == expected
+        started = await monitor.start_sized_demo(1)
+        assert started["site_id"] == "demo-1"
+        assert started["simulator_running"] is True
+        site = get_site("demo-1")
+        assert all(point["id"] != "compressor_count" for point in site["points"])
+        assert any(point["id"] == "water_outlet" and point["address_number"] == 40003 for point in site["points"])
+        values = None
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
+            values = monitor.snapshot()["values"]
+            outlet = values.get("water_outlet")
+            running = values.get("comp_1_running")
+            if outlet and outlet["quality"] == "good" and running and running["value"] is True:
+                break
+        assert values["water_outlet"]["quality"] == "good"
+        assert 5 <= values["water_outlet"]["value"] <= 10
+        assert values["comp_1_running"]["value"] is True
+        assert values["fan_output"]["value"] == 7
+        assert values["comp_1_suction_pressure"]["value"] == 4
+        assert values["comp_1_discharge_pressure"]["value"] == 14
+        assert values["press_2_cool_inlet_nor"]["value"] == 2
+        assert values["general_alarm"]["value"] is True
+        assert values["alarm_message1"]["value"] is True
+        assert values["alarm_message1"]["message"] == "Alarm Message1"
+        assert values["alarm_message_9"]["value"] == 12
+        assert values["alarm_message_9"]["message"] == "Alarm Message 9"
+        assert values["general_alarm"]["message"] == "General Alarm"
+        assert values["unit_active_status"]["value"] == 4
+        assert values["unit_active_status"]["message"] == "Unit active status: Alarm"
+        assert values["pump_running"]["value"] is True
+        name = values.get("chiller_name")
+        assert name["quality"] == "good"
+        assert name["value"] == "1 compressor"
 
-        with pytest.raises(ValueError):
-            await monitor.start_sized_demo(3)
+        for count in (2, 4, 6, 3):
+            with pytest.raises(ValueError):
+                await monitor.start_sized_demo(count)
 
         classic = await monitor.start_demo()
         assert classic["site_id"] == "demo"
         count_point = next(point for point in get_site("demo")["points"] if point["id"] == "compressor_count")
         assert count_point["writable"] is True
-        sized = next(point for point in get_site("demo-4")["points"] if point["id"] == "compressor_count")
-        assert sized["writable"] is False
     finally:
         await monitor.shutdown()
 
@@ -368,20 +346,21 @@ def test_sized_demo_http_rejects_other_counts():
     from app.main import app
 
     with TestClient(app) as client:
-        started = client.post("/api/demo/compressors/4")
+        started = client.post("/api/demo/compressors/1")
         assert started.status_code == 200, started.text
-        assert started.json()["site_id"] == "demo-4"
-        reported = None
+        assert started.json()["site_id"] == "demo-1"
+        outlet = None
         for _ in range(40):
             time.sleep(0.1)
             live = client.get("/api/live").json()
-            reported = live["values"].get("compressor_count")
-            if reported and reported["quality"] == "good" and reported["value"] == 4:
+            outlet = live["values"].get("water_outlet")
+            if outlet and outlet["quality"] == "good":
                 break
-        assert reported["value"] == 4
+        assert outlet["quality"] == "good"
         assert live["demo"] is True
-        rejected = client.post("/api/demo/compressors/3")
-        assert rejected.status_code == 400
+        for count in (2, 4, 6, 3):
+            rejected = client.post(f"/api/demo/compressors/{count}")
+            assert rejected.status_code == 400
         stopped = client.post("/api/demo/stop")
         assert stopped.status_code == 200
         assert stopped.json()["simulator_running"] is False
