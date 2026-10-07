@@ -78,7 +78,9 @@ def test_single_compressor_demo_lists_every_sheet_register(tmp_path, monkeypatch
     assert sum(point["id"] == "water_outlet" for point in again["points"]) == 1
 
     with pytest.raises(ValueError):
-        ensure_sized_demo(2, 1502)
+        ensure_sized_demo(4, 1502)
+    with pytest.raises(ValueError):
+        ensure_sized_demo(6, 1502)
 
     from app.main import app
     from fastapi.testclient import TestClient

@@ -242,6 +242,7 @@ function render() {
         <p>Join the chiller network on this laptop, then Chiller Monitor opens the same Modbus socket Modbus Monitor uses. Modbus TCP is for the RUT’s translating gateway. RTU over TCP is for a raw serial-over-IP tunnel. Customise display on the plant page chooses what the HMI shows. The register map holds addresses and scaling.</p>
         <div class="actions">
           <button class="primary" type="button" data-action="demo-size" data-count="1">Single compressor</button>
+          <button type="button" data-action="demo-size" data-count="2">Two compressors</button>
           <button type="button" data-action="add-site">Create a site</button>
         </div>
       </section>`;
@@ -1128,6 +1129,7 @@ function renderMap(main) {
         <button type="button" data-action="export">Export map</button>
         <label class="inline">Import <input id="importFile" type="file" accept="application/json,.json"></label>
         <button type="button" data-action="one-compressor">Load 1-compressor list</button>
+        <button type="button" data-action="two-compressor">Load 2-compressor list</button>
         <button type="button" class="danger" data-action="template">Reload chiller template</button>
       </div>
     </div>
@@ -1485,6 +1487,14 @@ async function onClick(event) {
       S.pointId = null;
       render();
       toast("1-compressor list loaded", true);
+    });
+  } else if (action === "two-compressor") {
+    if (!confirm("Replace this register map with the 2-compressor controller list, 400001 to 401005? Rows the sheet does not list are left out.")) return;
+    await guard(async () => {
+      S.site = await api(`/api/sites/${S.site.id}/profile/two-compressor`, { method: "POST" });
+      S.pointId = null;
+      render();
+      toast("2-compressor list loaded", true);
     });
   } else if (action === "export") {
     await guard(async () => {

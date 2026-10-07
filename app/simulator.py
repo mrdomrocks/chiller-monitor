@@ -296,8 +296,13 @@ class ChillerSimulator:
         }.items():
             if point_id in by_id and point_id not in values:
                 values[point_id] = sample
-        # These registers stay as raw counts. The HMI applies each point's scale and offset.
-        if "water_outlet" in by_id and "chw_supply" not in by_id:
+        # The single-compressor sheet has scale 1, so these raw counts are the readings.
+        # The two-compressor sheet uses the captured engineering values instead.
+        if (
+            "water_outlet" in by_id
+            and "chw_supply" not in by_id
+            and "comp_2_suction_pressure" not in by_id
+        ):
             held_raw = {
                 "water_outlet": 8 + round(math.sin(now / 8.0)),
                 "evaporator_outlet_temp": 13 + round(math.sin(now / 10.0)),
@@ -312,6 +317,15 @@ class ChillerSimulator:
                 scale = float(point.get("scale") or 1)
                 offset = float(point.get("offset") or 0)
                 values[point_id] = raw_number * scale + offset
+        if "comp_2_suction_pressure" in by_id:
+            from app.two_compressor import two_compressor_samples
+
+            for point_id, sample in two_compressor_samples().items():
+                if point_id in by_id:
+                    values[point_id] = sample
+            values["water_outlet"] = 12.6 + math.sin(now / 8.0) * 0.3
+            values["evaporator_outlet_temp"] = 17.4
+            values["general_alarm"] = True
         tripped = bool(values.get("general_alarm"))
         if tripped and "unit_active_status" in by_id:
             values["unit_active_status"] = 4

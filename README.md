@@ -56,7 +56,7 @@ A push to `main` builds a Windows installer and a Fedora/Nobara RPM, then publis
 
 The plant heading is the chiller name read from Modbus. A blank or missing name shows as Chiller. Match the text point’s address and length to the controller.
 
-The plant page reads the fitted-compressor register and shows that many circuits, each with its load percentage, up to six. A chiller that reports 2 shows two cards. A larger machine shows the extra compressors. Match **Fitted compressors**, each **Compressor N** load, and each run bit to the controller. The supplied controller sheet is the single-compressor demo. Sheets for chillers with more compressors can be added when they are available.
+The plant page reads the fitted-compressor register and shows that many circuits, each with its load percentage, up to six. A chiller that reports 2 shows two cards. A larger machine shows the extra compressors. Match **Fitted compressors**, each **Compressor N** load, and each run bit to the controller. The supplied controller sheets are the single-compressor demo and the two-compressor chiller. On the two-compressor sheet, temperatures and refrigerant pressures use gain 0.1, and 400034 is compressor 2 suction pressure. Sheets for chillers with more compressors can be added when they are available.
 
 ## Mapper
 
