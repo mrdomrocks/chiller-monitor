@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from app.paths import ROOT
 from app.store import create_site, get_site, replace_map
 
@@ -75,9 +77,8 @@ def test_single_compressor_demo_lists_every_sheet_register(tmp_path, monkeypatch
     again = ensure_sized_demo(1, 1502)
     assert sum(point["id"] == "water_outlet" for point in again["points"]) == 1
 
-    two = ensure_sized_demo(2, 1502)
-    assert any(point["id"] == "chw_supply" for point in two["points"])
-    assert all(point["id"] != "water_outlet" for point in two["points"])
+    with pytest.raises(ValueError):
+        ensure_sized_demo(2, 1502)
 
     from app.main import app
     from fastapi.testclient import TestClient

@@ -19,13 +19,11 @@ from app.paths import ROOT, data_dir, vpn_dir
 from app.template import ROLES, default_bindings, default_points
 
 DEMO_ID = "demo"
-DEMO_SIZES = (1, 2, 4, 6)
+DEMO_SIZES = (1,)
 _DEMO_NAMES = {
     1: "Demo — single compressor",
-    2: "Demo — two compressors",
-    4: "Demo — four compressors",
-    6: "Demo — six compressors",
 }
+_RETIRED_DEMOS = {"demo-2", "demo-4", "demo-6"}
 
 
 def sized_demo_id(count: int) -> str:
@@ -363,8 +361,17 @@ def _lock_fitted_count(site: dict) -> None:
             point["widget"] = "hidden"
 
 
+def _drop_retired_demos(data: dict) -> bool:
+    """The supplied sheet is one compressor. Drop the old multi-compressor demos."""
+    kept = [site for site in data["sites"] if site.get("id") not in _RETIRED_DEMOS]
+    if len(kept) == len(data["sites"]):
+        return False
+    data["sites"] = kept
+    return True
+
+
 def _ensure_demo_catalog(data: dict) -> bool:
-    """Keep the one, two, four, and six compressor demos in the site list."""
+    """Keep the single-compressor demo in the site list."""
     changed = False
     for count in DEMO_SIZES:
         site_id = sized_demo_id(count)
@@ -405,7 +412,8 @@ def _setpoint_layout(site: dict) -> tuple:
 def list_sites() -> list[dict]:
     with _LOCK:
         data = _load()
-        changed = _ensure_demo_catalog(data)
+        changed = _drop_retired_demos(data)
+        changed = _ensure_demo_catalog(data) or changed
         for site in data["sites"]:
             if site["id"] == sized_demo_id(1) and _starter_map(site):
                 _apply_one_compressor_map(site)
@@ -773,7 +781,7 @@ def ensure_sized_demo(count: int, port: int) -> dict:
     """A simulated chiller whose fitted-compressor register stays at this count."""
     count = int(count)
     if count not in DEMO_SIZES:
-        raise ValueError("Choose a demo with 1, 2, 4, or 6 compressors")
+        raise ValueError("The supplied sheet is the single-compressor demo")
     with _LOCK:
         data = _load()
         site_id = sized_demo_id(count)
