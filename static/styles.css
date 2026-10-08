@@ -490,6 +490,8 @@ textarea { min-height: 72px; resize: vertical; }
   margin-top: 4px;
   font-size: 1.35rem;
 }
+.run-time { margin: 8px 0 0; }
+.run-time b { font-size: 1.05rem; font-weight: 650; }
 .face-tile.alarm { border-color: var(--alarm); }
 .face-tile.stale { opacity: 0.72; }
 .face-alarm {
@@ -506,6 +508,7 @@ textarea { min-height: 72px; resize: vertical; }
   padding: 12px 14px;
   min-height: 96px;
 }
+.fault-box[data-kind="description"] { min-height: 132px; }
 .fault-box.tripped {
   border-color: var(--alarm);
   background: #fdecea;

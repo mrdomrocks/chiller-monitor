@@ -328,6 +328,8 @@ async def sized_demo_session():
         assert values["unit_active_status"]["value"] == 4
         assert values["unit_active_status"]["message"] == "Unit active status: Alarm"
         assert values["pump_running"]["value"] is True
+        assert values["run_time_comp1_hour"]["value"] == 12
+        assert values["run_time_comp1_min"]["value"] == 20
         name = values.get("chiller_name")
         assert name["quality"] == "good"
         assert name["value"] == "1 compressor"
@@ -353,6 +355,10 @@ async def sized_demo_session():
         assert two["comp_2_discharge_pressure"]["unit"] == "bar"
         assert two["comp_1_running"]["value"] is True
         assert two["comp_2_running"]["value"] is True
+        assert two["run_time_comp1_hour"]["value"] == 0
+        assert two["run_time_comp1_min"]["value"] == 50
+        assert two["run_time_comp2_hour"]["value"] == 0
+        assert two["run_time_comp2_min"]["value"] == 49
         assert two["target_temperature"]["value"] == 12
 
         for count in (4, 6, 3):

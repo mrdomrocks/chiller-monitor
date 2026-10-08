@@ -309,6 +309,8 @@ class ChillerSimulator:
                 "comp_1_suction_pressure": 4,
                 "comp_1_discharge_pressure": 14,
                 "press_2_cool_inlet_nor": 2,
+                "run_time_comp1_hour": 12,
+                "run_time_comp1_min": 20,
             }
             for point_id, raw_number in held_raw.items():
                 point = by_id.get(point_id)
