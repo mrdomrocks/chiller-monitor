@@ -412,7 +412,14 @@ function loadTile() {
   </article>`;
 }
 
-function runPointTile(point, title, roleId) {
+function runtimeLine(index) {
+  const hour = pointById(`run_time_comp${index}_hour`);
+  const minute = pointById(`run_time_comp${index}_min`);
+  if (!hour && !minute) return "";
+  return `<p class="run-time" data-runtime="${index}"><span class="kicker">Run time</span> <b data-runtime-text="${index}">—</b></p>`;
+}
+
+function runPointTile(point, title, roleId, runtimeIndex) {
   if (!point) {
     return `<article class="face-tile missing">
       <span class="kicker">${esc(title)}</span>
@@ -426,6 +433,7 @@ function runPointTile(point, title, roleId) {
       <span class="kicker">${esc(title)}</span>
       <span class="face-point">${esc(point.name)}</span>
       <strong data-value="${esc(point.id)}">—</strong>
+      ${runtimeIndex ? runtimeLine(runtimeIndex) : ""}
       ${roleId ? slotSelect(roleId) : ""}
     </div>
   </article>`;
@@ -438,13 +446,14 @@ function runTile(roleId, title) {
 function compressorOperationTiles() {
   const slots = compressorView().slots.filter((slot) => slot.run);
   if (!slots.length) {
-    return bound("compressor") ? runTile("compressor", "Compressor") : "";
+    return bound("compressor") ? runPointTile(bound("compressor"), "Compressor", "compressor", 1) : "";
   }
   const many = slots.length > 1;
   return slots.map((slot) => runPointTile(
     slot.run,
     many ? `Compressor ${slot.index}` : "Compressor",
     `comp_${slot.index}_run`,
+    slot.index,
   )).join("");
 }
 
@@ -461,7 +470,7 @@ function extraCircuitPressures() {
   }).join("");
 }
 
-function alarmFace() {
+function alarmFace(withDescription) {
   const point = bound("alarm");
   const lamp = point
     ? `<article class="face-alarm-lamp lamp-card" data-lamp="${esc(point.id)}">
@@ -482,11 +491,14 @@ function alarmFace() {
     <li data-fault="${esc(fault.id)}" hidden>
       <strong data-fault-text="${esc(fault.id)}"></strong>
     </li>`).join("");
+  const heading = withDescription ? "Description" : "Fault from the controller";
+  const empty = withDescription ? "No alarm description." : "No fault from the controller.";
+  const kind = withDescription ? ` data-kind="description"` : "";
   return `<div class="face-alarm">
     ${lamp}
-    <div class="fault-box" id="faultBox">
-      <span class="kicker">Fault from the controller</span>
-      <p class="fault-clear" id="faultClear">No fault from the controller.</p>
+    <div class="fault-box" id="faultBox"${kind}>
+      <span class="kicker">${heading}</span>
+      <p class="fault-clear" id="faultClear">${empty}</p>
       <ul class="fault-list">${faults}</ul>
     </div>
   </div>`;
@@ -498,7 +510,7 @@ function faceplateHtml() {
       <div class="section-head">
         <div>
           <h2>Chiller display</h2>
-          <p class="muted">Inlet and outlet temperature, compressor operation, pump running, suction and discharge pressure.</p>
+          <p class="muted">Inlet and outlet temperature, compressor operation and run time, pump running, suction and discharge pressure, and the alarm description.</p>
         </div>
       </div>
       <div class="face-grid">
@@ -510,6 +522,7 @@ function faceplateHtml() {
         ${analogTile("high_pressure", "Discharge")}
         ${extraCircuitPressures()}
       </div>
+      ${alarmFace(true)}
     </section>`;
   }
   return `<section class="faceplate" id="faceplate">
@@ -541,9 +554,18 @@ function faceplateOwnedIds() {
   take(bound("high_pressure"));
   take(bound("low_pressure"));
   if (controllerSheet()) {
-    for (const slot of compressorView().slots) take(slot.run);
+    const slots = compressorView().slots.filter((slot) => slot.run);
+    const indexes = new Set(slots.map((slot) => slot.index));
+    if (!indexes.size && bound("compressor")) indexes.add(1);
+    for (const slot of slots) take(slot.run);
+    for (const index of indexes) {
+      take(pointById(`run_time_comp${index}_hour`));
+      take(pointById(`run_time_comp${index}_min`));
+    }
     take(pointById("comp_2_suction_pressure"));
     take(pointById("comp_2_discharge_pressure"));
+    take(bound("alarm"));
+    for (const point of faultPoints()) ids.add(point.id);
     return ids;
   }
   take(loadPoint());
@@ -1068,14 +1090,30 @@ function paintLive() {
       else if (connectedHere && alarmReading && alarmReading.quality === "good") summary.textContent = alarmReading.display || "Normal";
       else summary.textContent = "—";
     }
+    const described = faultBox.dataset.kind === "description";
     if (!connectedHere) {
-      faultClear.textContent = "Connect to read the alarm message from the controller.";
+      faultClear.textContent = described
+        ? "Connect to read the alarm description from the controller."
+        : "Connect to read the alarm message from the controller.";
     } else if (alarmOn) {
-      faultClear.textContent = "Alarm is on. The controller has not output a fault message.";
+      faultClear.textContent = described
+        ? "Alarm is on. The controller has not output a description."
+        : "Alarm is on. The controller has not output a fault message.";
     } else {
-      faultClear.textContent = "No fault from the controller.";
+      faultClear.textContent = described ? "No alarm description." : "No fault from the controller.";
     }
   }
+  document.querySelectorAll("[data-runtime]").forEach((el) => {
+    const index = el.dataset.runtime;
+    const text = el.querySelector("[data-runtime-text]");
+    if (!text) return;
+    const parts = [];
+    const hour = readingFor(`run_time_comp${index}_hour`);
+    const minute = readingFor(`run_time_comp${index}_min`);
+    if (hour && hour.quality === "good") parts.push(`${hour.display} h`);
+    if (minute && minute.quality === "good") parts.push(`${minute.display} min`);
+    text.textContent = parts.length ? parts.join(" ") : "—";
+  });
   if (!S.site) return;
   document.querySelectorAll("[data-value]").forEach((el) => {
     const reading = readingFor(el.dataset.value);
