@@ -47,8 +47,29 @@ jobs:
           name: linux-rpm
           path: dist/chiller-monitor-*.rpm
 
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip rsync
+      - name: Build the user archive
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+          packaging/build-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-archive
+          path: dist/chiller-monitor-*-linux-x86_64.tar.gz
+
   publish:
-    needs: [windows, rpm]
+    needs: [windows, rpm, archive]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -58,6 +79,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: linux-rpm
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-archive
           path: dist
       - name: Publish the GitHub release
         env:
@@ -77,4 +102,5 @@ jobs:
             --title "Chiller Monitor ${{ github.sha }}" \
             --notes-file notes.txt \
             dist/ChillerMonitor-Setup.exe \
-            dist/chiller-monitor.x86_64.rpm
+            dist/chiller-monitor.x86_64.rpm \
+            dist/chiller-monitor-*-linux-x86_64.tar.gz

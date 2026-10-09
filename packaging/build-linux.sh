@@ -13,6 +13,10 @@ rm -rf "$SRC"
 mkdir -p "$WHEELS" "$ROOT/dist"
 rsync -a --exclude '__pycache__' "$ROOT/app" "$ROOT/static" "$SRC/"
 cp "$ROOT/packaging/requirements-runtime.txt" "$SRC/requirements-runtime.txt"
+rev=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)
+if [[ ${#rev} -eq 40 ]]; then
+  printf '%s\n' "$rev" > "$SRC/REVISION"
+fi
 cp "$ROOT/packaging/linux/install.sh" "$ROOT/packaging/linux/uninstall.sh" "$ROOT/packaging/linux/README.txt" "$SRC/"
 chmod +x "$SRC/install.sh" "$SRC/uninstall.sh"
 

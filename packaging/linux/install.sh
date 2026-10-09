@@ -15,6 +15,9 @@ mkdir -p "$DEST"
 rm -rf "$DEST/app" "$DEST/static"
 tar -C "$ROOT" --exclude '__pycache__' -cf - app static | tar -C "$DEST" -xf -
 cp "$ROOT/requirements-runtime.txt" "$DEST/requirements-runtime.txt"
+if [ -f "$ROOT/REVISION" ]; then
+  cp "$ROOT/REVISION" "$DEST/REVISION"
+fi
 
 if [ ! -x "$DEST/.venv/bin/python" ]; then
   rm -rf "$DEST/.venv"
@@ -32,6 +35,8 @@ cat > "$DEST/chiller-monitor" << EOF
 cd "$DEST"
 export CHILLER_INSTALLED=1
 export CHILLER_WINDOW=1
+export CHILLER_PACKAGE=archive
+export CHILLER_PREFIX="$DEST"
 export PYTHONUTF8=1
 export PYTHONPATH="$SITE\${PYTHONPATH:+:\$PYTHONPATH}"
 if "$PY" -c 'import gi' >/dev/null 2>&1; then

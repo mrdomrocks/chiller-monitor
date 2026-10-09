@@ -9,3 +9,5 @@ This archive installs a private copy for your user. It does not need an administ
 5. Choose Demo chiller to try the HMI without a controller.
 
 Close the terminal window to stop the program. Site profiles stay in ~/.local/share/chiller-monitor. Run ./uninstall.sh to remove the program and leave those profiles in place.
+
+Opening Chiller Monitor checks GitHub. When a newer build is published, this copy installs it and reopens. Site profiles are kept.

@@ -40,7 +40,7 @@ Close the program window to stop it. Choose **Demo chiller** to try the HMI with
 
 ## Updates
 
-A push to `main` builds a Windows installer and a Fedora/Nobara RPM, then publishes them as a GitHub release. An installed copy checks that release when it opens. **Download and install** replaces the program and reopens it. Site profiles are kept. Linux asks for your password. Install this version once on each computer; copies from before the update check cannot see later releases until they are installed again.
+A push to `main` builds a Windows installer, a Fedora/Nobara RPM, and a Linux archive, then publishes them as a GitHub release. An installed copy checks that release when it opens. A newer build is downloaded and installed, and the program reopens. Site profiles are kept. The RPM asks for your password. If that install does not finish, the plant page offers **Download and install**. Install this version once on each computer; copies from before the update check cannot see later releases until they are installed again.
 
 ## Connection
 

@@ -14,8 +14,17 @@ from app.window import URL, port_open, run_window
 
 
 def main() -> None:
-    if os.environ.get("CHILLER_WINDOW") == "1":
-        run_window(start_server=not port_open())
+    window = os.environ.get("CHILLER_WINDOW") == "1"
+    if window and port_open():
+        run_window(start_server=False)
+        return
+    if os.environ.get("CHILLER_INSTALLED") == "1":
+        from app.update import maybe_apply_update
+
+        if maybe_apply_update():
+            raise SystemExit(0)
+    if window:
+        run_window(start_server=True)
         return
     open_browser = os.environ.get("CHILLER_OPEN_BROWSER") == "1"
     if open_browser and port_open():

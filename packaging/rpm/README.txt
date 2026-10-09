@@ -4,4 +4,4 @@ Choose Demo chiller to try the HMI without a controller. Customise display, on t
 
 Site profiles stay in ~/.local/share/chiller-monitor and are kept if the package is removed.
 
-When a newer build is published on GitHub, the program offers Download and install. That asks for your password, replaces this package, and reopens Chiller Monitor.
+When a newer build is published on GitHub, opening Chiller Monitor downloads it, asks for your password, replaces this package, and reopens. If that install does not finish, the plant page offers Download and install.
