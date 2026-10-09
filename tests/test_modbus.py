@@ -6,7 +6,7 @@ import pytest
 
 from app.decode import engineering_from_raw
 from app.modbus_serial import parse_rtu, rtu_frame, rtu_response_length
-from app.modbus_tcp import ModbusDevice, ModbusError, ModbusTcpClient, serve_device
+from app.modbus_tcp import ModbusDevice, ModbusError, ModbusTcpClient, scan_range, serve_device
 
 
 def test_read_write_and_wrong_unit():
@@ -33,7 +33,47 @@ async def scenario():
         with pytest.raises(ModbusError) as caught:
             await other.read_holding(0, 1)
         assert caught.value.code == 11
+        rejected = other.drain_frames()
+        assert any(frame["direction"] == "rx" and frame["exception"] for frame in rejected)
         await other.close()
+        frames = client.drain_frames()
+        sent = [frame for frame in frames if frame["direction"] == "tx" and frame["function_code"] == 3]
+        received = [frame for frame in frames if frame["direction"] == "rx" and frame["function_code"] == 3]
+        assert sent and received
+        assert "01 03 00 00 00 01" in sent[0]["raw"]
+        assert sent[0]["transaction"] == received[0]["transaction"]
+    finally:
+        await client.close()
+        server.close()
+        await server.wait_closed()
+
+
+def test_scan_range_chunks_and_keeps_exceptions():
+    asyncio.run(scan_scenario())
+
+
+async def scan_scenario():
+    device = ModbusDevice(unit=1, size=200)
+    device.holding[4] = 42
+    device.coils[1] = True
+    server = await serve_device(device, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    client = ModbusTcpClient("127.0.0.1", port, 1, 1)
+    try:
+        cells = await scan_range(client, "holding", 0, 130)
+        assert len(cells) == 130
+        assert cells[4]["value"] == 42
+        assert cells[0]["error"] == ""
+        assert len([frame for frame in client.drain_frames() if frame["direction"] == "tx"]) == 2
+        coils = await scan_range(client, "coil", 0, 3)
+        assert [cell["value"] for cell in coils] == [0, 1, 0]
+        missed = await scan_range(client, "holding", 190, 20)
+        assert len(missed) == 20
+        assert "illegal data address" in missed[0]["error"]
+        with pytest.raises(ValueError):
+            from app.modbus_tcp import validate_scan
+
+            validate_scan("holding", 0, 501)
     finally:
         await client.close()
         server.close()

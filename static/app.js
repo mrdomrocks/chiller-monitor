@@ -7,6 +7,14 @@ const S = {
   view: "plant",
   pointId: null,
   customise: false,
+  tcp: {
+    function: "holding",
+    address: "0",
+    count: "16",
+    repeat: false,
+    cells: [],
+    detail: "",
+  },
 };
 
 let shellReady = false;
@@ -147,6 +155,7 @@ function ensureShell() {
       <button type="button" data-view="plant" aria-selected="true">Plant</button>
       <button type="button" data-view="map" aria-selected="false">Register map</button>
       <button type="button" data-view="link" aria-selected="false">Connection</button>
+      <button type="button" data-view="tcp" aria-selected="false">TCP</button>
       <button type="button" data-view="mapper" aria-selected="false">Mapper</button>
     </nav>
     <main id="main"></main>
@@ -257,6 +266,7 @@ function render() {
       </section>`;
   } else if (S.view === "map") renderMap(main);
   else if (S.view === "link") renderLink(main);
+  else if (S.view === "tcp") renderTcp(main);
   else renderPlant(main);
   if (drawOpen) {
     const details = document.querySelector(".customise details");
@@ -264,6 +274,7 @@ function render() {
   }
   paintLive();
   syncMapperWatch();
+  syncTcpWatch();
 }
 
 function layoutOn(key) {
@@ -1028,6 +1039,7 @@ function paintLive() {
       faultClear.textContent = "No fault from the controller.";
     }
   }
+  paintTcpFrames();
   if (!S.site) return;
   document.querySelectorAll("[data-value]").forEach((el) => {
     const reading = readingFor(el.dataset.value);
@@ -1379,6 +1391,10 @@ async function onClick(event) {
     await onMapperAction(action);
     return;
   }
+  if (action === "tcp-scan" || action === "tcp-clear") {
+    await onTcpAction(action);
+    return;
+  }
   if (action === "close-modal") {
     document.getElementById("modal").hidden = true;
     return;
@@ -1669,6 +1685,12 @@ async function onChange(event) {
     if (target.value === "rtu" && inter && Number(inter.value) === 0) inter.value = 20;
     return;
   }
+  if (target.id === "tcpRepeat") {
+    rememberTcp();
+    syncTcpWatch();
+    if (S.tcp.repeat) runScan(false);
+    return;
+  }
   if (target.id === "mapperMapping" || target.id === "mapperReplace") {
     await guard(async () => {
       S.mapper = await api("/api/mapper/settings", {
@@ -1799,6 +1821,7 @@ function onInput(event) {
   }
   const form = event.target.form;
   if (form && form.id === "pointForm") wireHint();
+  if (form && form.id === "tcpForm") rememberTcp();
   if (form && form.dataset.writePoint && event.target.name === "value") scheduleWritePlan(form);
 }
 
@@ -1857,6 +1880,174 @@ async function keepFresh() {
     }
   }
   paintLive();
+}
+
+let tcpTimer = 0;
+let scanBusy = false;
+
+function renderTcp(main) {
+  const tcp = S.tcp;
+  const areas = [["holding", "Holding (4x)"], ["input", "Input (3x)"], ["coil", "Coil (0x)"], ["discrete", "Discrete (1x)"]];
+  main.innerHTML = `
+    <section class="panel">
+      <h2>Address scanner</h2>
+      <p class="help">Read a raw address range from this site. Addresses are protocol numbers, starting at 0. Holding and input counts stop at 500. Coils and discrete inputs stop at 2000. A scan uses the live socket while this site is connected, and opens its own socket when it is not.</p>
+      <form id="tcpForm">
+        <div class="form-grid">
+          <label>Area
+            <select name="function">${areas.map(([value, label]) => `<option value="${value}"${tcp.function === value ? " selected" : ""}>${label}</option>`).join("")}</select>
+          </label>
+          <label>Start address <input name="address" type="number" min="0" max="65535" step="1" value="${esc(tcp.address)}"></label>
+          <label>Count <input name="count" type="number" min="1" max="2000" step="1" value="${esc(tcp.count)}"></label>
+        </div>
+        <div class="form-actions">
+          <button class="primary" type="button" data-action="tcp-scan">Scan</button>
+          <label class="inline"><input type="checkbox" id="tcpRepeat"${tcp.repeat ? " checked" : ""}> Repeat at the poll interval</label>
+        </div>
+      </form>
+      <p id="tcpDetail">${esc(tcp.detail)}</p>
+      <div class="table-wrap scan-log"><table>
+        <thead><tr><th>Address</th><th>Modicon</th><th>Hex</th><th>Unsigned</th><th>Signed</th></tr></thead>
+        <tbody id="tcpCells">${tcpCellRows(tcp.cells, tcp.function)}</tbody>
+      </table></div>
+    </section>
+    <section class="panel">
+      <h2>Transmit / receive</h2>
+      <p class="help">Frames from the live poll, writes, and scans. Newest first. Clearing the log does not disconnect.</p>
+      <div class="form-actions">
+        <button type="button" data-action="tcp-clear">Clear log</button>
+      </div>
+      <div class="table-wrap frame-log tcp-log"><table>
+        <thead><tr><th>Direction</th><th>Txn</th><th>Unit</th><th>Function</th><th>Frame</th></tr></thead>
+        <tbody id="tcpFrames">${tcpFrameRows(S.live && S.live.frames)}</tbody>
+      </table></div>
+    </section>`;
+}
+
+function modiconAddress(area, address) {
+  if (address > 9998) return "—";
+  return String(BASE[area] + address);
+}
+
+function tcpCellRows(cells, area) {
+  const bits = area === "coil" || area === "discrete";
+  const rows = (cells || []).map((cell) => {
+    if (cell.error) {
+      return `<tr class="scan-error"><td class="num">${esc(cell.address)}</td><td class="num">${esc(modiconAddress(area, cell.address))}</td><td colspan="3">${esc(cell.error)}</td></tr>`;
+    }
+    const value = Number(cell.value);
+    const hex = bits ? (value ? "0001" : "0000") : value.toString(16).toUpperCase().padStart(4, "0");
+    const signed = bits ? "—" : String(value > 32767 ? value - 65536 : value);
+    return `<tr><td class="num">${esc(cell.address)}</td><td class="num">${esc(modiconAddress(area, cell.address))}</td><td class="raw">${hex}</td><td class="num">${esc(value)}</td><td class="num">${signed}</td></tr>`;
+  }).join("");
+  return rows || `<tr><td colspan="5" class="muted">Scan a range to read it.</td></tr>`;
+}
+
+function tcpFrameRows(frames) {
+  const rows = (frames || []).slice().reverse().map((frame) => `
+    <tr>
+      <td>${frame.direction === "tx" ? "Transmit" : "Receive"}</td>
+      <td class="num">${esc(frame.transaction)}</td>
+      <td class="num">${esc(frame.unit)}</td>
+      <td>${esc(frame.function)}</td>
+      <td class="raw">${esc(frame.raw)}</td>
+    </tr>`).join("");
+  return rows || `<tr><td colspan="5" class="muted">Waiting for frames.</td></tr>`;
+}
+
+function rememberTcp() {
+  const form = document.getElementById("tcpForm");
+  if (!form) return;
+  S.tcp.function = form.elements.function.value;
+  S.tcp.address = form.elements.address.value;
+  S.tcp.count = form.elements.count.value;
+  const repeat = document.getElementById("tcpRepeat");
+  if (repeat) S.tcp.repeat = repeat.checked;
+}
+
+function scanSummary(scan) {
+  const bad = (scan.cells || []).filter((cell) => cell.error).length;
+  const noun = scan.function === "coil" || scan.function === "discrete" ? "bits" : "registers";
+  const base = `Read ${scan.count} ${scan.function} ${noun} from ${scan.address} in ${scan.elapsed_ms} ms.`;
+  return bad ? `${base} ${bad} ${bad === 1 ? "address" : "addresses"} did not answer.` : base;
+}
+
+function paintTcp() {
+  const detail = document.getElementById("tcpDetail");
+  if (detail) detail.textContent = S.tcp.detail || "";
+  const cells = document.getElementById("tcpCells");
+  if (cells) {
+    const html = tcpCellRows(S.tcp.cells, S.tcp.function);
+    if (cells.dataset.sig !== html) {
+      cells.dataset.sig = html;
+      cells.innerHTML = html;
+    }
+  }
+  const button = document.querySelector("[data-action='tcp-scan']");
+  if (button) button.disabled = scanBusy;
+  paintTcpFrames();
+}
+
+function paintTcpFrames() {
+  const body = document.getElementById("tcpFrames");
+  if (!body) return;
+  const html = tcpFrameRows(S.live && S.live.frames);
+  if (body.dataset.sig !== html) {
+    body.dataset.sig = html;
+    body.innerHTML = html;
+  }
+}
+
+async function runScan(manual) {
+  if (!S.site || scanBusy) return;
+  rememberTcp();
+  scanBusy = true;
+  paintTcp();
+  try {
+    const result = await api(`/api/sites/${S.site.id}/scan`, {
+      method: "POST",
+      body: {
+        function: S.tcp.function,
+        address: Number(S.tcp.address),
+        count: Number(S.tcp.count),
+      },
+    });
+    S.live = result.live;
+    S.tcp.cells = result.scan.cells;
+    S.tcp.detail = scanSummary(result.scan);
+    paintTcp();
+    paintLive();
+  } catch (error) {
+    S.tcp.detail = error.message;
+    paintTcp();
+    if (manual) toast(error.message);
+  } finally {
+    scanBusy = false;
+    paintTcp();
+  }
+}
+
+function syncTcpWatch() {
+  const want = S.view === "tcp" && S.tcp.repeat && S.site;
+  if (want && !tcpTimer) {
+    const interval = Math.max(500, Number(S.site.poll_ms) || 1000);
+    tcpTimer = setInterval(() => { runScan(false); }, interval);
+  } else if (!want && tcpTimer) {
+    clearInterval(tcpTimer);
+    tcpTimer = 0;
+  }
+}
+
+async function onTcpAction(action) {
+  if (!S.site) return;
+  if (action === "tcp-clear") {
+    await guard(async () => {
+      S.live = await api("/api/frames/clear", { method: "POST" });
+      paintTcpFrames();
+    });
+    return;
+  }
+  await runScan(true);
 }
 
 const MAPPER_TYPES = ["bool", "uint16", "int16", "uint32", "int32", "float32", "float64", "string"];

@@ -408,3 +408,62 @@ def test_demo_http_and_websocket():
         stopped = client.post("/api/demo/stop")
         assert stopped.status_code == 200
         assert stopped.json()["simulator_running"] is False
+
+
+def test_scan_http_rejects_a_bad_count():
+    from app.main import app
+
+    with TestClient(app) as client:
+        created = client.post("/api/sites", json={"name": "Scanner"}).json()
+        response = client.post(
+            f"/api/sites/{created['id']}/scan",
+            json={"function": "holding", "address": 0, "count": 0},
+        )
+        assert response.status_code == 400
+        cleared = client.post("/api/frames/clear")
+        assert cleared.status_code == 200
+        assert cleared.json()["frames"] == []
+
+
+def test_raw_scan_logs_frames_on_and_off_the_live_socket():
+    asyncio.run(scan_session())
+
+
+async def scan_session():
+    from app.modbus_tcp import ModbusDevice, serve_device
+    from app.store import create_site, update_site
+
+    device = ModbusDevice(unit=1, size=200)
+    device.holding[4] = 42
+    device.coils[1] = True
+    server = await serve_device(device, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    monitor = Monitor()
+    try:
+        site = create_site("Scanner")
+        update_site(site["id"], {"modbus_host": "127.0.0.1", "modbus_port": port, "unit_id": 1, "timeout_s": 1})
+        scanned = await monitor.scan(site["id"], "holding", 0, 130)
+        assert len(scanned["cells"]) == 130
+        assert scanned["cells"][4]["value"] == 42
+        sent = [frame for frame in monitor.snapshot()["frames"] if frame["direction"] == "tx"]
+        assert len(sent) == 2
+        coils = await monitor.scan(site["id"], "coil", 0, 3)
+        assert [cell["value"] for cell in coils["cells"]] == [0, 1, 0]
+        assert monitor.clear_frames()["frames"] == []
+
+        await monitor.connect(site["id"])
+        shared = None
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+            shared = await monitor.scan(site["id"], "holding", 4, 1)
+            if shared["cells"][0]["value"] == 42:
+                break
+        assert shared["cells"][0]["value"] == 42
+        assert shared["cells"][0]["error"] == ""
+        assert any(frame["direction"] == "tx" for frame in monitor.snapshot()["frames"])
+        assert any(frame["direction"] == "rx" for frame in monitor.snapshot()["frames"])
+    finally:
+        await monitor.shutdown()
+        server.close()
+        await server.wait_closed()

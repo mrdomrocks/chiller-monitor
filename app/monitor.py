@@ -10,7 +10,7 @@ from copy import deepcopy
 from app.blocks import plan_reads
 from app.alarms import fault_message
 from app.decode import engineering_from_raw, encode_numeric, format_value, in_alarm, wire_bool
-from app.modbus_tcp import ModbusTcpClient, apply_link
+from app.modbus_tcp import ModbusTcpClient, apply_link, scan_range, validate_scan
 from app.simulator import ChillerSimulator
 from app.store import DEMO_ID, DEMO_SIZES, ensure_demo, ensure_sized_demo, get_site, is_demo_site, sized_demo_id
 
@@ -35,6 +35,7 @@ def idle_snapshot() -> dict:
         "poll_ms": 1000,
         "values": {},
         "history": {},
+        "frames": [],
     }
 
 
@@ -50,6 +51,7 @@ class Monitor:
         self._subs: list[asyncio.Queue] = []
         self._last: dict[str, dict] = {}
         self._history: dict[str, list[float]] = {}
+        self._frames: list[dict] = []
         self._snap: dict = idle_snapshot()
 
     def snapshot(self) -> dict:
@@ -72,6 +74,7 @@ class Monitor:
             self._stop = asyncio.Event()
             self._last.clear()
             self._history.clear()
+            self._frames.clear()
             self.client = ModbusTcpClient(
                 site["modbus_host"],
                 site["modbus_port"],
@@ -156,8 +159,47 @@ class Monitor:
                 raise ValueError(f"Below the minimum of {point['write_min']}")
             if point.get("write_max") is not None and engineering > float(point["write_max"]):
                 raise ValueError(f"Above the maximum of {point['write_max']}")
-        await _write_point(client, point, engineering)
+        try:
+            await _write_point(client, point, engineering)
+        finally:
+            self._collect(client)
+            self._publish()
         return {"ok": True, "point_id": point_id, "value": engineering}
+
+    async def scan(self, site_id: str, function, address, count) -> dict:
+        area, start, total = validate_scan(function, address, count)
+        site = get_site(site_id)
+        borrowed = self.client if self.site_id == site_id else None
+        client = borrowed or ModbusTcpClient(
+            site["modbus_host"],
+            site["modbus_port"],
+            site["unit_id"],
+            site["timeout_s"],
+        )
+        if apply_link(client, site):
+            await client.close()
+        started = time.perf_counter()
+        try:
+            cells = await scan_range(client, area, start, total)
+        finally:
+            self._collect(client)
+            if borrowed is None:
+                await client.close()
+            self._publish()
+        return {
+            "function": area,
+            "address": start,
+            "count": total,
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+            "cells": cells,
+        }
+
+    def clear_frames(self) -> dict:
+        self._frames.clear()
+        if self.client is not None:
+            self.client.drain_frames()
+        self._publish()
+        return self.snapshot()
 
     async def _run(self) -> None:
         try:
@@ -262,6 +304,7 @@ class Monitor:
         if good:
             self._last_good = time.monotonic()
         previous_vpn = self._snap.get("vpn") or {"state": "down", "detail": ""}
+        self._collect(client)
         self._publish(
             {
                 "site_id": site_id,
@@ -289,6 +332,7 @@ class Monitor:
         task = self._task
         self._task = None
         if self.client is not None:
+            self._collect(self.client)
             await self.client.close()
             self.client = None
         if task is not None:
@@ -335,10 +379,18 @@ class Monitor:
             "history": {},
         }
 
+    def _collect(self, client: ModbusTcpClient) -> None:
+        fresh = client.drain_frames()
+        if not fresh:
+            return
+        self._frames.extend(fresh)
+        del self._frames[:-80]
+
     def _publish(self, snap: dict | None = None) -> None:
         if snap is not None:
             self._snap = snap
         self._snap["simulator_running"] = self._sim is not None
+        self._snap["frames"] = list(self._frames[-40:])
         payload = deepcopy(self._snap)
         for queue in list(self._subs):
             if queue.full():

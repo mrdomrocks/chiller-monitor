@@ -1,6 +1,7 @@
 """A small Modbus TCP client and server for the function codes a chiller needs.
 
-Function codes: 1, 2, 3, 4, 5, 6 and 16.
+Function codes: 1, 2, 3, 4, 5, 6 and 16. Each transaction is kept in a short
+transmit/receive log. A scan reads a raw address range in legal chunks.
 """
 
 from __future__ import annotations
@@ -20,6 +21,21 @@ EXCEPTION_TEXT = {
     10: "gateway path unavailable",
     11: "gateway target device failed to respond",
 }
+
+FUNCTION_LABEL = {
+    1: "Read coils",
+    2: "Read discrete",
+    3: "Read holding",
+    4: "Read input",
+    5: "Write coil",
+    6: "Write register",
+    15: "Write coils",
+    16: "Write registers",
+}
+
+SCAN_CHUNK = {"holding": 125, "input": 125, "coil": 2000, "discrete": 2000}
+SCAN_MAX = {"holding": 500, "input": 500, "coil": 2000, "discrete": 2000}
+_MAX_FRAMES = 80
 
 
 class ModbusError(Exception):
@@ -135,6 +151,71 @@ def _frame(transaction: int, unit: int, pdu: bytes) -> bytes:
     return struct.pack(">HHHB", transaction, 0, 1 + len(pdu), unit) + pdu
 
 
+def _describe(pdu: bytes) -> tuple[int, str, bool]:
+    if not pdu:
+        return 0, "empty", False
+    code = pdu[0]
+    if code & 0x80:
+        exc = pdu[1] if len(pdu) > 1 else 0
+        text = EXCEPTION_TEXT.get(exc, "error")
+        return code & 0x7F, f"exception {exc} ({text})", True
+    return code, FUNCTION_LABEL.get(code, f"function {code}"), False
+
+
+def _hex(raw: bytes) -> str:
+    return " ".join(f"{byte:02X}" for byte in raw)
+
+
+def validate_scan(function, address, count) -> tuple[str, int, int]:
+    area = str(function or "")
+    if area not in SCAN_CHUNK:
+        raise ValueError("Area must be holding, input, coil, or discrete")
+    try:
+        start = int(address)
+        total = int(count)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Address and count must be whole numbers") from exc
+    if start < 0 or start > 65535:
+        raise ValueError("Address must be from 0 to 65535")
+    limit = SCAN_MAX[area]
+    if total < 1 or total > limit:
+        raise ValueError(f"Count must be from 1 to {limit}")
+    if start + total - 1 > 65535:
+        raise ValueError("That range runs past address 65535")
+    return area, start, total
+
+
+def _failed(address: int, count: int, detail: str) -> list[dict]:
+    return [{"address": address + offset, "value": None, "error": detail} for offset in range(count)]
+
+
+async def scan_range(client: "ModbusTcpClient", function: str, address: int, count: int) -> list[dict]:
+    """Read a protocol address range. A rejected chunk is kept as an error and the next chunk still runs."""
+    cells: list[dict] = []
+    step = SCAN_CHUNK[function]
+    cursor = address
+    left = count
+    bits = function in ("coil", "discrete")
+    while left:
+        take = min(step, left)
+        try:
+            values = await client.read(function, cursor, take)
+        except ModbusError as exc:
+            cells.extend(_failed(cursor, take, str(exc)))
+        except (ConnectionError, TimeoutError, OSError) as exc:
+            if any(cell["error"] == "" for cell in cells):
+                cells.extend(_failed(cursor, left, str(exc)))
+                break
+            raise
+        else:
+            for offset, value in enumerate(values):
+                shown = int(bool(value)) if bits else int(value)
+                cells.append({"address": cursor + offset, "value": shown, "error": ""})
+        cursor += take
+        left -= take
+    return cells
+
+
 async def _read_frame(reader: asyncio.StreamReader) -> tuple[int, int, bytes]:
     header = await reader.readexactly(6)
     transaction, protocol, length = struct.unpack(">HHH", header)
@@ -208,6 +289,28 @@ class ModbusTcpClient:
         self._tid = 0
         self._io = asyncio.Lock()
         self._next_send = 0.0
+        self._frames: list[dict] = []
+
+    def drain_frames(self) -> list[dict]:
+        frames = self._frames
+        self._frames = []
+        return frames
+
+    def _remember(self, direction: str, transaction: int, unit: int, pdu: bytes, raw: bytes | None = None) -> None:
+        code, label, exception = _describe(pdu)
+        blob = raw if raw is not None else _frame(transaction, unit, pdu)
+        self._frames.append(
+            {
+                "direction": direction,
+                "transaction": transaction,
+                "unit": unit,
+                "function_code": code,
+                "function": label,
+                "exception": exception,
+                "raw": _hex(blob),
+            }
+        )
+        del self._frames[:-_MAX_FRAMES]
 
     @property
     def connected(self) -> bool:
@@ -335,10 +438,11 @@ class ModbusTcpClient:
     async def _exchange_tcp(self, pdu: bytes) -> bytes:
         assert self._reader is not None and self._writer is not None
         self._tid = self._tid + 1 if self._tid < 65535 else 1
+        self._remember("tx", self._tid, self.unit, pdu)
         self._writer.write(_frame(self._tid, self.unit, pdu))
         try:
             await asyncio.wait_for(self._writer.drain(), self.timeout)
-            transaction, _unit, response = await asyncio.wait_for(
+            transaction, unit, response = await asyncio.wait_for(
                 _read_frame(self._reader),
                 self.timeout,
             )
@@ -350,6 +454,7 @@ class ModbusTcpClient:
         except (asyncio.IncompleteReadError, ConnectionError, OSError) as exc:
             await self.close()
             raise ConnectionError(f"Modbus connection to {self.host}:{self.port} dropped") from exc
+        self._remember("rx", transaction, unit, response)
         if transaction != self._tid:
             await self.close()
             raise ModbusError(3, "Modbus transaction id did not match")
@@ -358,10 +463,13 @@ class ModbusTcpClient:
     async def _exchange_rtu(self, pdu: bytes) -> bytes:
         """Modbus RTU frame on a TCP socket, the same framing Modbus Monitor uses for a raw RUT serial tunnel."""
         assert self._reader is not None and self._writer is not None
-        self._writer.write(rtu_frame(bytes([self.unit]) + pdu))
+        self._tid = self._tid + 1 if self._tid < 65535 else 1
+        request = rtu_frame(bytes([self.unit]) + pdu)
+        self._remember("tx", self._tid, self.unit, pdu, request)
+        self._writer.write(request)
         try:
             await asyncio.wait_for(self._writer.drain(), self.timeout)
-            return await asyncio.wait_for(self._read_rtu_response(), self.timeout)
+            raw, response = await asyncio.wait_for(self._read_rtu_response(), self.timeout)
         except TimeoutError as exc:
             await self.close()
             raise TimeoutError(
@@ -370,8 +478,10 @@ class ModbusTcpClient:
         except (asyncio.IncompleteReadError, ConnectionError, OSError) as exc:
             await self.close()
             raise ConnectionError(f"RTU over TCP connection to {self.host}:{self.port} dropped") from exc
+        self._remember("rx", self._tid, self.unit, response, raw)
+        return response
 
-    async def _read_rtu_response(self) -> bytes:
+    async def _read_rtu_response(self) -> tuple[bytes, bytes]:
         assert self._reader is not None
         buf = bytearray()
         while True:
@@ -397,7 +507,7 @@ class ModbusTcpClient:
                     3,
                     f"RTU response was from unit {parsed['unit']}, expected {self.unit}",
                 )
-            return bytes(parsed["pdu"])
+            return bytes(buf), bytes(parsed["pdu"])
 
     def _raise_function(self, response: bytes, function: int) -> None:
         if response and response[0] == (function | 0x80) and len(response) > 1:

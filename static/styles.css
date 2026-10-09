@@ -160,6 +160,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   text-transform: uppercase;
 }
 .frame-log { max-height: 220px; overflow: auto; margin-top: 12px; }
+.tcp-log { max-height: 280px; }
+.scan-log { max-height: 360px; }
+tr.scan-error td { color: var(--alarm); white-space: normal; }
 .mapper-table input, .mapper-table select { min-width: 0; width: 100%; }
 
 .update-banner {

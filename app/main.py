@@ -285,6 +285,22 @@ async def disconnect(site_id: str):
     return monitor.snapshot()
 
 
+@app.post("/api/sites/{site_id}/scan")
+async def scan_site(site_id: str, body: dict):
+    try:
+        result = await monitor.scan(site_id, body.get("function"), body.get("address"), body.get("count"))
+    except KeyError as exc:
+        raise HTTPException(404, "Site not found") from exc
+    except (ValueError, RuntimeError, OSError, TimeoutError, ConnectionError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"scan": result, "live": monitor.snapshot()}
+
+
+@app.post("/api/frames/clear")
+async def clear_frames():
+    return monitor.clear_frames()
+
+
 @app.post("/api/sites/{site_id}/test")
 async def test_link(site_id: str):
     try:
